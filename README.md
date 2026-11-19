@@ -13,4 +13,4 @@ Spielstände liegen unter `Dokumente\Civarria\Spielstände`.
 - `src/` – Quelltext (core.js = Simulation, culture.js = Werte, Gebote & Herrschaftsformen, techtree.js = Zivilisationsbaum, town.js = Siedlungen im Raster, worker.js = Simulations-Thread, ui.js = Darstellung, sprites.js = Pixel-Figuren)
 - `npm run build` – setzt `app/index.html` zusammen
 - `npm start` – startet das Programm
-- Release: `package.json`-Version erhöhen, Tag `vX.Y.Z` pushen → GitHub Actions baut das Setup und veröffentlicht es
+- Release: Version in `package.json` erhöhen und auf `main` pushen → GitHub Actions baut das Setup und veröffentlicht es

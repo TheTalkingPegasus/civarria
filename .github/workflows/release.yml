@@ -1,8 +1,12 @@
-# Baut bei jedem Versions-Tag (z. B. v0.2.0) das Windows-Setup und legt es als GitHub-Release ab.
-# Installierte Programme finden das Release automatisch und aktualisieren sich.
+# Baut das Windows-Setup und veröffentlicht es als GitHub-Release.
+# Auslöser: eine neue Versionsnummer in package.json (Push auf main) oder von Hand über „Run workflow“.
+# Gibt es das Release zur Version schon, passiert nichts.
+# Installierte Programme finden das neue Release beim Start und aktualisieren sich.
 name: Release
 on:
   push:
+    branches: [main]
+    paths: ['package.json']
     tags: ['v*']
   workflow_dispatch:
 permissions:

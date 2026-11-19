@@ -46,7 +46,8 @@
       {
         "provider": "github",
         "owner": "TheTalkingPegasus",
-        "repo": "civarria"
+        "repo": "civarria",
+        "releaseType": "release"
       }
     ]
   }

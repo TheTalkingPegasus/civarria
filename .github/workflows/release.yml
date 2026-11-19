@@ -1,0 +1,23 @@
+# Baut bei jedem Versions-Tag (z. B. v0.2.0) das Windows-Setup und legt es als GitHub-Release ab.
+# Installierte Programme finden das Release automatisch und aktualisieren sich.
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: npm install
+      - run: npm run build
+      - run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

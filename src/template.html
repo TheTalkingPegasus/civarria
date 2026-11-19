@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Civarria</title>
+<style>
+:root{--bg:#141517;--panel:#1d1f23;--panel2:#25282d;--line:#33373e;--text:#e7e3da;--dim:#9a968c;--acc:#e0b03c;--red:#d9644a;--green:#7bbf6a;}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:13px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;user-select:none}
+canvas#view{position:fixed;inset:0;width:100%;height:100%;cursor:grab;display:block}
+canvas#view.drag{cursor:grabbing}
+button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 9px;cursor:pointer}
+button:hover{border-color:#555b64;background:#2d3137}
+button.on{background:var(--acc);color:#1a1a1a;border-color:var(--acc);font-weight:600}
+input[type=range]{accent-color:var(--acc)}
+#top{position:fixed;top:0;left:0;right:0;height:44px;display:flex;align-items:center;gap:14px;padding:0 12px;background:linear-gradient(#1b1d21f2,#1b1d21d9);border-bottom:1px solid var(--line);z-index:5}
+#top .logo{font-weight:800;letter-spacing:.14em;color:var(--acc)}
+#date{font-variant-numeric:tabular-nums;min-width:210px}
+#date b{font-weight:600}
+#speeds{display:flex;gap:3px}
+#speeds button{min-width:38px;padding:4px 6px}
+#popinfo{color:var(--dim);font-variant-numeric:tabular-nums}
+#tabs{margin-left:auto;display:flex;gap:4px}
+#side{position:fixed;top:44px;right:0;bottom:0;width:360px;background:var(--panel);border-left:1px solid var(--line);z-index:4;display:flex;flex-direction:column}
+#side.hidden{display:none}
+#sidebody{overflow-y:auto;padding:10px 12px;flex:1}
+#sidebody h3{margin:4px 0 8px;font-size:14px}
+.filters{display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap}
+.chron{padding:6px 8px;border-left:3px solid var(--line);margin-bottom:5px;background:#202328;border-radius:0 6px 6px 0;cursor:pointer}
+.chron:hover{background:#262a30}
+.chron.i3{border-left-color:var(--acc)}
+.chron.i2{border-left-color:#6d8fbf}
+.chron .d{color:var(--dim);font-size:11px}
+#insp{position:fixed;top:54px;left:10px;width:330px;max-height:calc(100% - 64px);overflow-y:auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;z-index:4;padding:12px 14px;display:none;box-shadow:0 8px 30px #0008}
+#insp h2{margin:0;font-size:17px}
+#insp .sub{color:var(--dim);margin:2px 0 8px}
+#insp .x{position:absolute;right:8px;top:6px;background:none;border:none;font-size:18px;color:var(--dim)}
+.sec{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.sec>.t{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin-bottom:5px}
+.bar{display:flex;align-items:center;gap:8px;margin:2px 0}
+.vrow{display:flex;align-items:center;gap:6px;margin:3px 0;font-size:11.5px}
+.vrow .vl,.vrow .vr{width:96px;color:var(--dim);line-height:1.15}
+.vrow .vl{text-align:right}.vrow .on{color:var(--text)}
+.vrow .vb{flex:1;height:7px;background:#2d3036;border-radius:4px;position:relative;display:block}
+.vrow .vb>i{position:absolute;top:0;bottom:0;border-radius:4px;display:block}
+.vrow .vb::after{content:'';position:absolute;left:50%;top:-1px;bottom:-1px;width:1px;background:#555b64}
+.vrow input[type=range]{flex:1;min-width:0}
+.rule{margin:3px 0;font-style:italic}
+#tree{position:fixed;inset:44px 0 0 0;background:#15171b;z-index:40;display:none;flex-direction:column}
+#tree .th{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+#tree .th #treex{margin-left:auto;font-size:18px;padding:0 10px}
+#tree .leg{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim)}
+#tree .leg i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-left:8px}
+#tree .tb{flex:1;display:flex;min-height:0}
+#tree .tw{flex:1;overflow:auto;cursor:grab;position:relative}
+#tree .tc{position:relative}
+#tree .band{position:absolute;left:0;right:0;border-top:1px solid #2a2e35}
+#tree .band span{position:absolute;left:12px;top:3px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#6c727c}
+#tree svg{position:absolute;left:0;top:0;pointer-events:none}
+#tree path.e{fill:none;stroke:#3a3f48;stroke-width:1.4;opacity:.55}
+#tree path.e.open{stroke:#8a7430}#tree path.e.known{stroke:#5c8a4e}#tree path.e.hi{stroke:#ffd34a;stroke-width:2.5;opacity:1}
+#tree .tn{position:absolute;display:flex;align-items:center;gap:7px;padding:0 9px;border-radius:9px;border:1.5px solid #3a3f48;background:#1f2228;cursor:pointer;font-size:12.5px;line-height:1.15;box-sizing:border-box;transition:opacity .15s}
+#tree .tn .ic{font-size:19px;width:22px;text-align:center}
+#tree .tn .pb{position:absolute;left:8px;right:8px;bottom:4px;height:3px;background:#2d3036;border-radius:2px;overflow:hidden;display:block}
+#tree .tn .pb b{display:block;height:100%;background:var(--acc)}
+#tree .tn.known,.leg .known{background:#25331f!important;border-color:#5c8a4e!important}
+#tree .tn.known .pb b{background:#7bbf6a}
+#tree .tn.near,.leg .near{border-color:#c49a2a!important;background:#2c2717!important}
+#tree .tn.lost,.leg .lost{border-color:#d9644a!important;background:#33201c!important}
+#tree .tn.locked{opacity:.55}.leg .locked{background:#1f2228;border:1.5px solid #3a3f48}
+#tree .tn.sel{box-shadow:0 0 0 2px #ffd34a}
+#tree .tn.dim{opacity:.18}
+#tree .td{width:320px;border-left:1px solid var(--line);padding:14px;overflow:auto;background:var(--panel)}
+#tree .td h2{margin:0 0 2px;font-size:17px}
+#tree .td .sec{margin-top:10px}
+#tree .td .t{font-size:11px;text-transform:uppercase;color:var(--dim);letter-spacing:.06em;margin-bottom:3px}
+#tree .tl{display:inline-block;margin:2px 4px 2px 0;padding:2px 7px;border-radius:6px;border:1px solid #3a3f48;cursor:pointer;font-size:12px}
+#tree .tl.known{border-color:#5c8a4e}#tree .tl.near{border-color:#c49a2a}#tree .tl.lost{border-color:#d9644a}
+.lnk{background:none!important;border:none!important;color:var(--acc)!important;padding:2px 0!important;margin-top:4px;cursor:pointer;font-size:12px}
+.bar span{width:92px;color:var(--dim)}
+.bar i{flex:1;height:7px;background:#2d3036;border-radius:4px;overflow:hidden;display:block}
+.bar i b{display:block;height:100%;background:var(--green)}
+.trait{display:flex;align-items:center;gap:6px;margin:1px 0}
+.trait span{width:92px}
+.trait input{flex:1}
+.trait em{width:26px;text-align:right;color:var(--dim);font-style:normal;font-variant-numeric:tabular-nums}
+.chip{display:inline-block;background:#2a2e34;border:1px solid var(--line);border-radius:12px;padding:1px 8px;margin:2px 3px 2px 0;font-size:12px}
+.chip.b{border-color:#7a6aa8}
+.link{color:#9fc3ff;cursor:pointer}
+.link:hover{text-decoration:underline}
+.mem{color:#c9c5bb;font-size:12px;margin:2px 0}
+.mem .d{color:var(--dim)}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+select{font:inherit;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px}
+.tribe{display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;cursor:pointer;background:#202328;margin-bottom:5px}
+.tribe:hover{background:#262a30}
+.dot{width:11px;height:11px;border-radius:50%;flex:none;display:inline-block}
+.tech{padding:6px 8px;background:#202328;border-radius:6px;margin-bottom:5px}
+.tech .n{font-weight:600}
+.tech .p{height:5px;background:#2d3036;border-radius:3px;margin-top:4px;overflow:hidden}
+.tech .p b{display:block;height:100%;background:#6d8fbf}
+#toasts{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;z-index:6;pointer-events:none;width:min(620px,70vw)}
+.toast{background:#1d1f23f2;border:1px solid var(--acc);border-radius:8px;padding:8px 12px;box-shadow:0 6px 20px #0009;animation:fi .3s;pointer-events:auto;cursor:pointer}
+@keyframes fi{from{opacity:0;transform:translateY(8px)}}
+#mini{position:fixed;left:10px;bottom:10px;border:1px solid var(--line);border-radius:6px;z-index:3;cursor:pointer;background:#000}
+#help{position:fixed;inset:0;background:#000a;z-index:10;display:flex;align-items:center;justify-content:center}
+#help .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;max-width:560px;max-height:90vh;overflow-y:auto;padding:20px 24px;line-height:1.55}
+#help h2{margin-top:0;color:var(--acc)}
+#help kbd{background:#2a2e34;border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:12px}
+.small{font-size:12px;color:var(--dim)}
+label.cb{display:flex;gap:6px;align-items:center;margin:6px 0}
+#tip{position:fixed;pointer-events:none;background:#111c;border:1px solid var(--line);padding:3px 7px;border-radius:5px;z-index:7;font-size:12px;display:none}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="top">
+  <span class="logo">CIVARRIA</span>
+  <span id="date"></span>
+  <div id="speeds"></div>
+  <span id="popinfo"></span>
+  <div id="tabs">
+    <button data-tab="chron" class="on">Chronik</button>
+    <button data-tab="tribes">Sippen</button>
+    <button data-tab="tech">Wissen</button>
+    <button data-tab="stats">Statistik</button>
+    <button data-tab="world">Welt</button>
+    <button id="helpbtn" title="Hilfe">?</button>
+  </div>
+</div>
+<div id="side"><div id="sidebody"></div></div>
+<div id="insp"></div>
+<canvas id="mini"></canvas>
+<div id="toasts"></div>
+<div id="tip"></div>
+<div id="help" style="display:none"><div class="box">
+  <h2>Willkommen bei Civarria</h2>
+  <p>Ein paar hundert Menschen in einigen Sippen. Sie können sammeln, mit Stock und Stein jagen und ein Feuer hüten – mehr nicht. Alles andere müssen sie <b>selbst herausfinden</b>: durch Ausprobieren, Beobachten und voneinander Lernen. Du schaust nur zu.</p>
+  <p><b>Steuerung</b><br>
+  Ziehen = Karte verschieben · Mausrad = Zoom · Klick auf Mensch oder Lager = Details<br>
+  <kbd>Leertaste</kbd> Pause · <kbd>1</kbd>–<kbd>6</kbd> Tempo · <kbd>F</kbd> Ausgewählten verfolgen · <kbd>Esc</kbd> Auswahl schließen · <kbd>WASD</kbd> Karte bewegen</p>
+  <p><b>Überleben ist hart.</b> Der Winter dauert fast so lange wie die anderen drei Jahreszeiten zusammen. Wer im Herbst zu wenig sammelt, hungert. Flüsse und Seen sind Hindernisse, bis jemand das Floß erfindet. Not führt zu Diebstahl, Streit, Flucht und Überfällen.</p>
+  <p><b>Reviere.</b> Jede Sippe beansprucht Land um ihr Lager – es wächst mit ihr. Freunde werden geduldet, Fremde beobachtet und verjagt, Feinde angegriffen. Oberhäupter reisen zu Nachbarn und verhandeln um Nahrung, Zugang, Frieden oder Bündnisse – was dabei herauskommt, hängt von ihrem Charakter, ihrer Not und ihrer gemeinsamen Geschichte ab.</p>
+  <p><b>Sesshaftigkeit.</b> Wo Menschen oft gehen, entstehen Trampelpfade – sie werden bevorzugt genutzt, auch von Räubern. Mit neuen Erkenntnissen kommen Felder, Ziegenherden, Fischreusen, Vorratshäuser, Palisaden, Pfeil & Bogen. Sippen können zur Vielehe übergehen, wenn es mehr Frauen als Männer gibt.</p>
+  <p><b>Siedlungen.</b> Sobald eine Sippe Hütten baut, legt sie ihr Dorf auf dem Raster an: ein Platz mit dem Feuer, ringsum Parzellen und Gassen. Häuser haben Betten, Herd und Vorräte und werden nur durch die Tür betreten. Palisade und Mauer umschließen das Dorf als Rechteck mit Toren. Weit herausgezoomt siehst du die Dächer, nah dran das Innenleben.</p>
+  <p><b>Zivilisationsbaum.</b> Unter „Wissen“ siehst du alle 69 Entdeckungen vom Faustkeil bis zur Stadt – was sie brauchen und wohin sie führen. Spätere Schritte brauchen auch die richtige Lage: Bewässerung nur mit Feldern am Fluss, Schrift erst in großen, sesshaften Siedlungen. Was keiner mehr weiß, ist vergessen – bis jemand es neu entdeckt.</p>
+  <p><b>Kulturen.</b> Jeder Mensch hat eigene Werte – 32 Stück, von Gastfreundschaft bis Blutrache. Sie kommen aus Charakter, Erziehung und Erlebtem. Was sich in einer Sippe durchsetzt, wird zur Sitte, starke Sitten werden zu Geboten. Daraus entsteht die Herrschaftsform: Horde, Ältestenrat, Mütterrat, Versammlung, Kriegerherrschaft, Geisterweisung – mit Sesshaftigkeit auch Erbhäuptlinge, Priester und Könige. Wer nicht mehr dazupasst, verändert die Sippe oder zieht mit Gleichgesinnten fort. Klicke ein Lager an, um die Kultur einer Sippe zu sehen.</p>
+  <p><b>Eingreifen</b><br>Klicke einen Menschen an. Du kannst seine Persönlichkeit und seine Werte mit den Reglern verändern oder ihm eine Idee einflüstern. Einem Oberhaupt kannst du Plünderung, Eroberung, Bündnis oder Frieden einflüstern. Was daraus wird, entscheidet die Figur selbst.</p>
+  <p class="small">Tempo: Bei 1× dauert ein Tag etwa 16 Sekunden – ideal zum Zuschauen. Um Generationen vergehen zu lassen, schalte auf 30× bis 500× (ab 100× ohne Tag-Nacht-Wechsel). Fortschritt ist zäh: Große Entdeckungen liegen oft Generationen auseinander. Der Regler „Fortschrittstempo“ unter „Welt“ ändert das.</p>
+  <div style="text-align:right"><button id="helpok" class="on">Los geht's</button></div>
+</div></div>
+<script>
+/*ASSETS*/
+</script>
+<script>
+/*CORE*/
+</script>
+<script type="text/plain" id="coreSrc">
+/*CORESRC*/
+</script>
+<script type="text/plain" id="workerSrc">
+/*WORKER*/
+</script>
+<script>
+/*SPRITES*/
+</script>
+<script>
+/*UI*/
+</script>
+</body>
+</html>

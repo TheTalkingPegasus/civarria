@@ -11,11 +11,11 @@ function townOrigin(T) { if (!T.town || T.town.cx !== (T.cx | 0) || T.town.cy !=
 const lotXY = (O, i, j) => [O.cx - 2 + i * LOT, O.cy - 2 + j * LOT]; // linke obere Kachel
 // Was ist vom Platz aus trockenen Fußes erreichbar? (Parzellen nur dort, sonst stehen Häuser jenseits des Bachs)
 function townReach(T, O) {
-  if (O.reach && O.reachV === (W.hutVer || 0)) return O.reach;
+  if (O.reach && O.reachV === (W.hutVer || 0) + ':' + (T.townVer || 0)) return O.reach;
   const seen = new Set(), q = [O.cy * C.MW + O.cx]; seen.add(q[0]);
   while (q.length) { const i = q.pop(), x = i % C.MW, y = (i / C.MW) | 0;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (Math.abs(X - O.cx) > 40 || Math.abs(Y - O.cy) > 40 || X < 0 || Y < 0 || X >= C.MW || Y >= C.MH) continue; const j = Y * C.MW + X; if (seen.has(j) || W.t[j] < T_SHORE) continue; const h = houseAt(X, Y); if (h && !(X === h.lx + 2 && Y === h.ly + h.h - 1)) continue; seen.add(j); q.push(j); } }
-  O.reach = seen; O.reachV = W.hutVer || 0; return seen;
+  O.reach = seen; O.reachV = (W.hutVer || 0) + ':' + (T.townVer || 0); return seen;
 }
 function lotOK(T, O, i, j) {
   const [x0, y0] = lotXY(O, i, j);
@@ -47,7 +47,7 @@ function allocLot(T, kind, wl = 1, hl = 1) {
       for (const bu of bushesNear(P.cx, P.cy, 4)) if (bu.x >= x0 && bu.x < x0 + P.w && bu.y >= y0 && bu.y < y0 + P.h) { bu.gone = 1; bu.f = 0; bu.max = 0; }
       for (const id of T.members) { const m = NPC.get(id); if (m && m.spots.length) m.spots = m.spots.filter(s => !s.b.gone); }
       for (let y = y0; y < y0 + P.h; y++) for (let x = x0; x < x0 + P.w; x++) { const k = y * C.MW + x; if (W.t[k] === T_FOREST) { W.t[k] = T_GRASS; W.cut[k] = 'f'; if (HOOKS.onTile) HOOKS.onTile(x, y); } }
-      T.townVer = (T.townVer || 0) + 1; W.hutVer = (W.hutVer || 0) + 1;
+      T.townVer = (T.townVer || 0) + 1; if (!W.hutVer) W.hutVer = 1;
       return P;
     }
   }
@@ -72,18 +72,23 @@ function houseOK(e, x, y) {
   return false;
 }
 // Wo liegt welches Haus? (für Tür-Wege und Wärme)
-let HMAP = null, HMAPV = -1;
+let HMAP = null, HMAPV = -1, HLIST = [];
 function houseAt(x, y) {
-  if (HMAPV !== (W.hutVer || 0) || !HMAP) { HMAP = new Map(); HMAPV = W.hutVer || 0; for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts)) if (h.lx !== undefined) for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) HMAP.set(yy * C.MW + xx, h); }
-  return HMAP.get((y | 0) * C.MW + (x | 0));
+  if (HMAPV !== (W.hutVer || 0) || !HMAP || HMAP.length !== C.MW * C.MH) {
+    HMAPV = W.hutVer || 0; if (!HMAP || HMAP.length !== C.MW * C.MH) HMAP = new Int32Array(C.MW * C.MH); else HMAP.fill(0); HLIST = [null];
+    for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts)) if (h.lx !== undefined) { const id = HLIST.length; HLIST.push(h); for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) HMAP[yy * C.MW + xx] = id; }
+  }
+  x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return undefined;
+  const id = HMAP[y * C.MW + x]; return id ? HLIST[id] : undefined;
 }
 // ---------------------------------------------------------------- Laufen in der Siedlung
 // Häuser betritt und verlässt man nur durch die Tür, Palisade und Mauer nur durch die Tore.
 // Ist der gerade Weg verstellt, sucht A* einen Weg über das Kachelraster.
 let WMAP = null, WMAPV = '';
+let WMAPT = -1;
 function wallAt(x, y) {
-  const v = (W.hutVer || 0) + ':' + W.tribes.reduce((a, T) => a + (T.alive && T.town ? (T.pal || 0) + (T.bld?.wall || 0) * 100 + (T.townVer || 0) * 7 : 0), 0);
-  if (v !== WMAPV) { WMAPV = v; WMAP = new Set(); for (const T of W.tribes) { if (!T.alive || !T.town) continue; const isW = (T.bld?.wall || 0) > 0, prog = isW ? T.bld.wall / BUILD_NEED.wall : (T.pal || 0) / 24; if (prog <= 0) continue; const R = townRect(T), per = townPerimeter(R), n = Math.round(per.length * Math.min(1, prog)); for (let k = 0; k < n; k++) WMAP.add(per[k][1] * C.MW + per[k][0]); } }
+  if (WMAPT !== W.tick) { WMAPT = W.tick; const v = (W.hutVer || 0) + ':' + W.tribes.reduce((a, T) => a + (T.alive && T.town ? (T.pal || 0) + (T.bld?.wall || 0) * 100 + (T.townVer || 0) * 7 : 0), 0);
+  if (v !== WMAPV) { WMAPV = v; WMAP = new Set(); for (const T of W.tribes) { if (!T.alive || !T.town) continue; const isW = (T.bld?.wall || 0) > 0, prog = isW ? T.bld.wall / BUILD_NEED.wall : (T.pal || 0) / 24; if (prog <= 0) continue; const R = townRect(T), per = townPerimeter(R), n = Math.round(per.length * Math.min(1, prog)); for (let k = 0; k < n; k++) WMAP.add(per[k][1] * C.MW + per[k][0]); } } }
   return WMAP.has((y | 0) * C.MW + (x | 0));
 }
 // darf man von Kachel (ax,ay) nach (bx,by)?
@@ -105,26 +110,32 @@ function lineClear(e, tx, ty) {
     px = x; py = y; }
   return true;
 }
+const AS_MAX = 9000, AS_G = new Float32Array(AS_MAX), AS_FROM = new Int32Array(AS_MAX), AS_STAMP = new Int32Array(AS_MAX), AS_HK = new Float32Array(AS_MAX * 4), AS_HV = new Int32Array(AS_MAX * 4); let AS_GEN = 0;
 function aStar(e, tx, ty) {
   const sx = e.x | 0, sy = e.y | 0, gx = tx | 0, gy = ty | 0;
-  const x0 = Math.min(sx, gx) - 12, y0 = Math.min(sy, gy) - 12, w = Math.abs(sx - gx) + 25, h = Math.abs(sy - gy) + 25;
-  if (w * h > 9000) return null;
-  const idx = (x, y) => (y - y0) * w + (x - x0), g = new Float32Array(w * h).fill(1e9), from = new Int32Array(w * h).fill(-1), open = [[0, sx, sy]];
-  g[idx(sx, sy)] = 0; let it = 0;
-  while (open.length && it++ < 6000) {
-    let bi = 0; for (let i = 1; i < open.length; i++) if (open[i][0] < open[bi][0]) bi = i;
-    const [, x, y] = open[bi]; open[bi] = open[open.length - 1]; open.pop();
-    if (x === gx && y === gy) { const pts = []; let c = idx(x, y); while (c >= 0 && c !== idx(sx, sy)) { pts.push([(c % w) + x0 + 0.5, ((c / w) | 0) + y0 + 0.5]); c = from[c]; } return pts.reverse(); }
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < x0 || Y < y0 || X >= x0 + w || Y >= y0 + h) continue; if (!stepOK(e, x, y, X, Y)) continue;
-      const j = idx(X, Y), ng = g[idx(x, y)] + (W.path[Y * C.MW + X] ? 0.7 : 1); if (ng < g[j]) { g[j] = ng; from[j] = idx(x, y); open.push([ng + Math.abs(X - gx) + Math.abs(Y - gy), X, Y]); } }
+  const x0 = Math.min(sx, gx) - 8, y0 = Math.min(sy, gy) - 8, w = Math.abs(sx - gx) + 17, h = Math.abs(sy - gy) + 17, N = w * h;
+  if (N > AS_MAX) return null;
+  const gen = ++AS_GEN, g = AS_G, from = AS_FROM, st = AS_STAMP, hk = AS_HK, hv = AS_HV; let hn = 0;
+  const G = i => st[i] === gen ? g[i] : 1e9;
+  const push = (v, k) => { let i = hn++; while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; } hk[i] = k; hv[i] = v; };
+  const pop = () => { const v = hv[0], lk = hk[--hn], lv = hv[hn]; let i = 0; while (true) { let c = 2 * i + 1; if (c >= hn) break; if (c + 1 < hn && hk[c + 1] < hk[c]) c++; if (hk[c] >= lk) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; } hk[i] = lk; hv[i] = lv; return v; };
+  const s = (sy - y0) * w + (sx - x0), goal = (gy - y0) * w + (gx - x0); st[s] = gen; g[s] = 0; from[s] = -1; push(s, 0); let it = 0;
+  while (hn > 0 && it++ < 2500) {
+    const c = pop(); if (c === goal) { const pts = []; let q = c; while (q >= 0 && q !== s) { pts.push([(q % w) + x0 + 0.5, ((q / w) | 0) + y0 + 0.5]); q = from[q]; } return pts.reverse(); }
+    const x = (c % w) + x0, y = ((c / w) | 0) + y0, gc = g[c];
+    for (let d = 0; d < 4; d++) { const X = x + (d === 0 ? 1 : d === 1 ? -1 : 0), Y = y + (d === 2 ? 1 : d === 3 ? -1 : 0); if (X < x0 || Y < y0 || X >= x0 + w || Y >= y0 + h) continue;
+      const j = (Y - y0) * w + (X - x0), ng = gc + (W.path[Y * C.MW + X] ? 0.7 : 1); if (ng >= G(j) || hn >= AS_MAX * 4 - 1 || !stepOK(e, x, y, X, Y)) continue; st[j] = gen; g[j] = ng; from[j] = c; push(j, ng + 1.2 * (Math.abs(X - gx) + Math.abs(Y - gy))); }
   }
   return null;
 }
 function navMove(e, tx, ty, speed) {
   if (e.ghost > 0) { e.ghost--; return moveStep(e, tx, ty, speed); }
   let N = e.nav;
-  if (!N || Math.abs(N.tx - tx) > 0.01 || Math.abs(N.ty - ty) > 0.01 || N.v !== WMAPV + '|' + (W.hutVer || 0)) {
-    if (lineClear(e, tx, ty)) { e.nav = null; return moveStep(e, tx, ty, speed); }
+  if (N && N.clear && N.tx === tx && N.ty === ty && W.tick < N.until) return moveStep(e, tx, ty, speed);
+  if (N && !N.clear && (Math.abs(N.tx - tx) > 0.01 || Math.abs(N.ty - ty) > 0.01) && Math.abs(N.tx - tx) + Math.abs(N.ty - ty) < 1.5 && houseAt(tx, ty) === houseAt(N.tx, N.ty)) { N.tx = tx; N.ty = ty; } // Ziel hat sich nur ein wenig bewegt
+  if (!N || N.clear || Math.abs(N.tx - tx) > 0.01 || Math.abs(N.ty - ty) > 0.01) {
+    if (lineClear(e, tx, ty)) { e.nav = { clear: 1, tx, ty, until: W.tick + 10 }; return moveStep(e, tx, ty, speed); }
+    if (e.act && (e.act.type === 'social' || e.act.type === 'play')) return moveStep(e, tx, ty, speed); // Plaudern: kein Umweg-Planen
     const pts = aStar(e, tx, ty);
     if (!pts) { e.ghost = 40; e.nav = null; return moveStep(e, tx, ty, speed); }
     N = e.nav = { tx, ty, v: WMAPV + '|' + (W.hutVer || 0), pts, i: 0, f: 0 };

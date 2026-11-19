@@ -12,7 +12,7 @@ const SPEEDS = [0, 1, 3, 10, 30, 100, 500];
 const TPS = 3; // Ticks pro Sekunde bei 1× (ein Tag ≈ 16 Sekunden)
 let terrain = null, miniTerrain = null, nightC = null, nctx = null;
 
-const ACT_TXT = {
+const ACT_TXT = { fetch: 'holt etwas aus dem Lager',
   sleep: 'schläft', rest: 'ruht sich aus', warm: 'wärmt sich auf', eat: 'isst', deliver: 'bringt Vorräte ins Lager', play: 'spielt',
   gather: 'sammelt Beeren und Wurzeln', hunt: 'ist auf der Jagd', fish: 'fischt', wood: 'holt Feuerholz', social: 'unterhält sich',
   defend: 'verteidigt das Lager', farm: 'arbeitet auf dem Feld', herd: 'versucht, eine Wildziege einzufangen', trap: 'legt eine Fischreuse aus', construct: 'baut', visit: 'besucht eine befreundete Sippe',
@@ -310,7 +310,9 @@ function draw(t) {
   if (Z > 0.3) for (const k in W.fields) {
     const x = k % C.MW, y = (k / C.MW) | 0; if (!inView(x, y)) continue;
     const f = W.fields[k], px = x * TS, py = y * TS;
-    tex(ctx, f.st >= 2 ? (f.st === 3 ? 'ripe' : 'grow') : 'farm', px, py);
+    const FTr = TRIBE.get(f.tr), legume = FTr && TK(FTr, 'huelsen') && hash(x + 11, y + 5) < 0.35;
+    if (legume && f.st >= 2) { tex(ctx, 'farm', px, py); for (let yy = 2; yy < TS; yy += 5) for (let xx = 1; xx < TS; xx += 4) { ctx.fillStyle = '#3d7a2c'; ctx.fillRect(px + xx, py + yy, 3, 3); ctx.fillStyle = f.st === 3 ? '#b8c060' : '#6fae45'; ctx.fillRect(px + xx + 1, py + yy, 1, 2); } }
+    else tex(ctx, f.st >= 2 ? (f.st === 3 ? 'ripe' : 'grow') : 'farm', px, py);
     { const FT_ = TRIBE.get(f.tr); if (FT_ && TK(FT_, 'bewaesserung') && (x + y) % 2 === 0) { ctx.fillStyle = '#3a6ea8'; ctx.fillRect(px, py + 14, TS, 2); ctx.fillStyle = '#7ab4e0'; ctx.fillRect(px, py + 14, TS, 1); } if (FT_ && TK(FT_, 'dattel') && hash(x, y) < 0.08) { ctx.fillStyle = '#6a4424'; ctx.fillRect(px + 7, py - 6, 2, 12); ctx.fillStyle = '#4f8a3a'; for (let i = 0; i < 5; i++) ctx.fillRect(px + 8 + Math.cos(i * 1.25) * 5 - 2, py - 7 + Math.sin(i * 1.25) * 2, 5, 2); } } if (f.st === 1) { ctx.fillStyle = '#6fb04a'; for (let yy = 3; yy < TS; yy += 4) for (let xx = 2; xx < TS; xx += 4) ctx.fillRect(px + xx, py + yy, 2, 2); }
   }
   // Felsbilder
@@ -319,7 +321,8 @@ function draw(t) {
   for (const T of W.tribes) {
     if (!T.alive || !inView(T.cx, T.cy, 10)) continue;
     const px = T.cx * TS, py = T.cy * TS;
-    if (T.town) drawTownGround(T); else { ctx.save(); ctx.globalAlpha = 0.85; ctx.fillStyle = patt(ctx, 'dirtFloor'); ctx.beginPath(); ctx.ellipse(px, py, 40, 32, 0, 0, 7); ctx.fill(); ctx.restore(); }
+    if (T.town) drawTownGround(T);
+    drawCampProps(T, px, py);
     // Vorräte
     const piles = T.storehouse ? 0 : Math.min(8, Math.ceil(T.store.food / 40));
     for (let i = 0; i < piles; i++) { const ax = px + 20 + (i % 4) * 7, ay = py - 14 + Math.floor(i / 4) * 7; ctx.fillStyle = '#7a5a34'; ctx.fillRect(ax, ay, 6, 6); ctx.fillStyle = '#a3311f'; ctx.fillRect(ax + 1, ay + 1, 4, 2); }
@@ -455,15 +458,53 @@ function drawWall(T, k) {
       if (j % 2 === 0) { ctx.fillStyle = '#d4b07a'; ctx.fillRect(x - 4, y - 11, 3, 2); } }
   }
 }
+// ---------------------------------------------------------------- Was das Wissen einer Sippe im Lager sichtbar macht
+function campShore(T) {
+  if (T._shore && T._shore.c === T.cx + ',' + T.cy) return T._shore;
+  let best = null, bd = 1e9; for (let dy = -14; dy <= 14; dy++) for (let dx = -14; dx <= 14; dx++) { const x = (T.cx | 0) + dx, y = (T.cy | 0) + dy, t = tileAt(x, y); if (t < T_SHORE || houseAt(x, y)) continue; if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => tileAt(x + a, y + b) <= T_SHALLOW)) continue; const d = dx * dx + dy * dy; if (d < bd) { bd = d; best = [x, y]; } }
+  T._shore = best ? Object.assign(best, { c: T.cx + ',' + T.cy }) : { c: T.cx + ',' + T.cy, none: 1 }; return T._shore;
+}
+function drawItems(T, X, Y) { // X,Y = linke obere Ecke der Ablage (Weltpixel)
+  const I = T.items || {}, sp = Math.min(6, I.speer || 0), bo = Math.min(4, I.bogen || 0), fk = Math.min(4, I.faustkeil || 0), ko = Math.min(3, I.korb || 0), kl = Math.min(4, (I.kleidung || 0) + (I.tuch || 0));
+  if (!(sp + bo + fk + ko + kl)) return;
+  ctx.fillStyle = '#5a3d22'; ctx.fillRect(X, Y + 10, 26, 2); ctx.fillRect(X, Y - 2, 2, 14); ctx.fillRect(X + 24, Y - 2, 2, 14); // Gestell
+  for (let i = 0; i < sp; i++) { const c = toolCanvas(TK(T, 'kupfer_guss') ? 'kspeer' : 'speer'); ctx.save(); ctx.translate(X + 3 + i * 3, Y + 10); ctx.rotate(-0.75); ctx.drawImage(c, -2, -c.height + 2); ctx.restore(); }
+  for (let i = 0; i < bo; i++) ctx.drawImage(toolCanvas('bogen'), X + 15 + i * 3, Y - 1);
+  for (let i = 0; i < fk; i++) ctx.drawImage(toolCanvas('faustkeil'), X + 1 + i * 6, Y + 13);
+  for (let i = 0; i < ko; i++) ctx.drawImage(toolCanvas('korb'), X + 26 + i * 8, Y + 5);
+  for (let i = 0; i < kl; i++) { ctx.fillStyle = I.tuch ? '#d8cfb0' : '#b8956a'; ctx.fillRect(X + 27, Y - 3 - i * 3, 9, 3); ctx.fillStyle = I.tuch ? '#b5aa86' : '#8a6a44'; ctx.fillRect(X + 27, Y - 1 - i * 3, 9, 1); }
+}
+function drawCampProps(T, px, py) {
+  if (!(T.storehouse && T.storehouse.lx !== undefined)) drawItems(T, px + 4, py + 12);
+  const P = (k, rows, x, y, pal = CAMP_PAL) => { const c = pxCanvas(k, rows, pal); ctx.drawImage(c, Math.round(x - c.width / 2), Math.round(y - c.height / 2)); };
+  // Vorratsgruben (bis ein Vorratshaus steht): je mehr Vorrat, desto mehr Gruben
+  if (TK(T, 'vorratsgrube') && !T.storehouse) { const n = Math.min(6, 1 + Math.floor(T.store.food / 80)); for (let i = 0; i < n; i++) P('pit', PIT_PX, px + 10 + (i % 3) * 9, py - 24 + Math.floor(i / 3) * 8); }
+  // Kochen: Bratspieß über dem Feuer
+  if (TK(T, 'kochen') && T.fire.lit) { ctx.strokeStyle = '#5a3d22'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(px - 8, py + 4); ctx.lineTo(px - 7, py - 7); ctx.moveTo(px + 8, py + 4); ctx.lineTo(px + 7, py - 7); ctx.moveTo(px - 9, py - 6); ctx.lineTo(px + 9, py - 6); ctx.stroke(); if (T.store.food > 5) { ctx.fillStyle = '#8a3a20'; ctx.fillRect(px - 3, py - 8, 6, 4); ctx.fillStyle = '#b8603a'; ctx.fillRect(px - 2, py - 8, 4, 1); } }
+  // Heilkräuter trocknen am Gestell, Körbe aus Flechtwerk, Mahlstein, Krüge mit Bier und Milch
+  if (TK(T, 'heilkraeuter')) P('rack', RACK_PX, px - 24, py - 20);
+  if (TK(T, 'flechten')) { const c = toolCanvas('korb'); ctx.drawImage(c, px - 30, py + 8); ctx.drawImage(c, px - 24, py + 11); }
+  if (TK(T, 'mahlstein') && !T.huts.length) P('quern', QUERN_PX, px + 22, py + 2, FURN_PAL);
+  if (TK(T, 'bier')) for (let i = 0; i < 3; i++) P('jar', JAR_PX, px - 14 + i * 7, py + 22);
+  if (TK(T, 'milch') && T.penR) for (let i = 0; i < 2; i++) P('jarm', JAR_PX, (T.penR.x0 + 0.6) * TS + i * 7, (T.penR.y0 + T.penR.h - 0.8) * TS, { ...CAMP_PAL, b: '#e8e2d0', B: '#ffffff' });
+  // Kalender: ein Kreis aus Steinen, der die Sonnenwenden zeigt
+  if (TK(T, 'kalender')) { const RR = T.town && townRect(T), cx = RR ? (RR.x0 - 1.5) * TS : px - 44, cy = RR ? (RR.y0 - 1.5) * TS : py - 40; for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283, x = cx + Math.cos(a) * 10, y = cy + Math.sin(a) * 6; ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(x - 1, y + 2, 4, 2); ctx.fillStyle = '#8a8680'; ctx.fillRect(x - 1, y - 5, 3, 7); ctx.fillStyle = '#b0aca4'; ctx.fillRect(x - 1, y - 5, 3, 1); } }
+  // Fernhandel: ein Marktstand am Platz
+  if (TK(T, 'fernhandel')) P('stall', STALL_PX, px, py - 26);
+  // am Ufer: Fischgestell, Netze, Boote
+  const S = campShore(T);
+  if (!S.none && (TK(T, 'fischen') || TK(T, 'netz') || TK(T, 'einbaum'))) {
+    const sx = S[0] * TS + 8, sy = S[1] * TS + 8;
+    if (TK(T, 'netz')) P('netrack', NETRACK_PX, sx - 10, sy - 4); else if (TK(T, 'fischen')) P('fishrack', FISHRACK_PX, sx - 10, sy - 4);
+    if (TK(T, 'einbaum')) { const b = pxCanvas(TK(T, 'segelboot') ? 'reed' : 'dug', TK(T, 'segelboot') ? REED_PX : DUGOUT_PX, BOAT_PAL); ctx.drawImage(b, sx + 2, sy + 2); }
+  }
+}
 // ---------------------------------------------------------------- Siedlung im Raster (JRPG-Draufsicht)
 function drawTownGround(T) {
   const O = T.town, R = townRect(T);
-  // gestampfte Erde in der Siedlung, Platz in der Mitte
-  ctx.save(); ctx.globalAlpha = 0.45; ctx.fillStyle = patt(ctx, 'dirtFloor'); ctx.fillRect((R.x0 + 1) * TS, (R.y0 + 1) * TS, (R.x1 - R.x0 - 2) * TS, (R.y1 - R.y0 - 2) * TS); ctx.restore();
-  const [x0, y0] = lotXY(O, 0, 0); ctx.fillStyle = patt(ctx, 'dirtFloor'); ctx.fillRect(x0 * TS - 8, y0 * TS - 8, LOTW * TS + 16, LOTW * TS + 16);
-  ctx.fillStyle = 'rgba(70,50,30,.25)'; ctx.fillRect(x0 * TS - 8, y0 * TS - 8, LOTW * TS + 16, 2);
   // Werkhof
   for (const k in O.lots) { const P = O.lots[k]; if (P.kind === 'werk' && k === P.i + ',' + P.j) { ctx.fillStyle = patt(ctx, 'dirtFloor'); ctx.fillRect(P.x0 * TS, P.y0 * TS, P.w * TS, P.h * TS); ctx.strokeStyle = '#6b4a2b'; ctx.lineWidth = 1; ctx.strokeRect(P.x0 * TS + 0.5, P.y0 * TS + 0.5, P.w * TS - 1, P.h * TS - 1); }
+    if (P.kind === 'werk' && k === P.i + ',' + P.j) { if (TK(T, 'toepferscheibe')) { const c = pxCanvas('pwheel', PWHEEL_PX, FURN_PAL); ctx.drawImage(c, P.x0 * TS + 26, P.y0 * TS + 10); } if (TK(T, 'lehmziegel')) for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) { ctx.fillStyle = '#b8925c'; ctx.fillRect(P.x0 * TS + 6 + i * 9, P.y0 * TS + 40 + r * 7, 7, 4); ctx.fillStyle = '#d4b07a'; ctx.fillRect(P.x0 * TS + 6 + i * 9, P.y0 * TS + 40 + r * 7, 7, 1); } }
     if (P.kind === 'werk' && k === P.i + ',' + P.j && TK(T, 'rad')) { const wc = pxCanvas('wheel', WHEEL_PX, FURN_PAL); ctx.drawImage(wc, P.x0 * TS + 26, (P.y0 + P.h) * TS - 14); ctx.drawImage(wc, P.x0 * TS + 30, (P.y0 + P.h) * TS - 12); }
     if (P.kind === 'store' && k === P.i + ',' + P.j && TK(T, 'wagen')) { const c = pxCanvas('cart', CART_PX, { o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', r: '#8a6a44', R: '#4a3424' }); ctx.drawImage(c, (P.x0 + P.w) * TS + 1, (P.y0 + 2) * TS); }
     if (P.kind === 'bau' && k === P.i + ',' + P.j && !T.huts.some(h => h.lot === k)) { ctx.strokeStyle = 'rgba(120,90,50,.8)'; ctx.setLineDash([3, 3]); ctx.strokeRect(P.x0 * TS + 2, P.y0 * TS + 2, P.w * TS - 4, P.h * TS - 4); ctx.setLineDash([]); for (let i = 0; i < 3; i++) tex(ctx, 'logEnd', P.x0 * TS + 10 + i * 7, P.y0 * TS + 40, 6, 6); } }
@@ -513,6 +554,10 @@ function drawStoreLot(T) {
   ctx.fillStyle = patt(ctx, 'plank'); ctx.fillRect(X, Y, Wd, Hd);
   const n = Math.min(16, Math.ceil(T.store.food / 50));
   for (let i = 0; i < n; i++) tex(ctx, i % 3 === 2 ? 'crate2' : 'crate', X + 6 + (i % 4) * 14, Y + 12 + Math.floor(i / 4) * 12, 12, 12);
+  drawItems(T, X + 5, Y + Hd - 30);
+  if (TK(T, 'zaehlsteine')) { ctx.fillStyle = '#8a5a34'; ctx.beginPath(); ctx.arc(X + Wd - 9, Y + Hd - 10, 4, 0, 7); ctx.fill(); ctx.fillStyle = '#c8a070'; for (let i = 0; i < 5; i++) ctx.fillRect(X + Wd - 12 + (i % 3) * 2, Y + Hd - 12 + Math.floor(i / 3) * 2, 1, 1); }
+  if (TK(T, 'schrift') || TK(T, 'rationen')) { const c = pxCanvas('tablet', TABLET_PX, CAMP_PAL); ctx.drawImage(c, X + 6, Y + Hd - 12); if (TK(T, 'schrift')) ctx.drawImage(c, X + 14, Y + Hd - 12); }
+  if (TK(T, 'siegel')) { ctx.fillStyle = '#b5482e'; ctx.fillRect(X + 7, Y + 13, 2, 2); ctx.fillRect(X + 21, Y + 13, 2, 2); }
   ctx.fillStyle = patt(ctx, 'barkDark'); ctx.fillRect(X, Y, Wd, 8); ctx.fillRect(X, Y, 3, Hd); ctx.fillRect(X + Wd - 3, Y, 3, Hd); ctx.fillRect(X, Y + Hd - 3, 2 * TS, 3); ctx.fillRect(X + 3 * TS, Y + Hd - 3, Wd - 3 * TS, 3);
   ctx.fillStyle = T.col; ctx.fillRect(X + 2, Y - 3, 8, 3);
 }
@@ -657,8 +702,11 @@ function drawNpc(n, px, py, selected, detail) {
   if (n.sick > 0) { ctx.fillStyle = 'rgba(120,180,80,.35)'; ctx.fillRect(-4, -12, 8, 6); }
   // Oberhaupt: Federschmuck
   const top = child ? -9 : -13;
+  if (!n.copper && !child && T && TK(T, 'schmuck') && n.prestige > 22) { const ny = top + 7; ctx.fillStyle = '#efe6cc'; ctx.fillRect(-3, ny, 1, 1); ctx.fillRect(2, ny, 1, 1); ctx.fillStyle = '#b5482e'; ctx.fillRect(-1, ny + 1, 2, 1); }
+  if (T && a && (a.type === 'raid' || a.type === 'defend') && TK(T, 'heer') && !child) { ctx.fillStyle = '#c8783a'; ctx.fillRect(-4, top - 1, 8, 3); ctx.fillStyle = '#e8a060'; ctx.fillRect(-3, top - 1, 6, 1); ctx.fillStyle = '#8a6440'; ctx.beginPath(); ctx.arc(n.face === 'side' && n.flip ? 5 : -5, top + 9, 3.2, 0, 7); ctx.fill(); ctx.fillStyle = '#c8783a'; ctx.fillRect((n.face === 'side' && n.flip ? 5 : -5) - 1, top + 8, 2, 2); }
   if (n.copper && !child) { const ny = top + 7; ctx.fillStyle = '#d0803e'; ctx.fillRect(-3, ny, 1, 1); ctx.fillRect(-1, ny + 1, 2, 1); ctx.fillRect(2, ny, 1, 1); ctx.fillStyle = '#f0b070'; ctx.fillRect(0, ny + 1, 1, 1); }
-  if (T && T.leader === n.id) { ctx.fillStyle = '#e0b03c'; ctx.fillRect(-1, top - 3, 2, 3); ctx.fillStyle = '#b5482e'; ctx.fillRect(1, top - 4, 1, 3); }
+  if (T && T.leader === n.id && T.gov === 'koenig') { ctx.fillStyle = '#e0b03c'; ctx.fillRect(-3, top - 2, 6, 2); ctx.fillRect(-3, top - 4, 1, 2); ctx.fillRect(0, top - 4, 1, 2); ctx.fillRect(2, top - 4, 1, 2); ctx.fillStyle = '#b5482e'; ctx.fillRect(-1, top - 2, 1, 1); }
+  else if (T && T.leader === n.id) { ctx.fillStyle = '#e0b03c'; ctx.fillRect(-1, top - 3, 2, 3); ctx.fillStyle = '#b5482e'; ctx.fillRect(1, top - 4, 1, 3); }
   // Tragen
   const carry = n.inv.food + n.inv.meat;
   if (carry > 0 && detail) { const bx = n.face === 'up' ? 0 : -dir * 4, by = n.face === 'up' ? -6 : -4; ctx.fillStyle = n.tools.korb > 0 ? '#b8935a' : '#7a5a34'; ctx.fillRect(bx - 2.5, by, 5, 4); if (n.inv.meat) { ctx.fillStyle = '#a3311f'; ctx.fillRect(bx - 1.5, by, 3, 2); } else { ctx.fillStyle = '#c23b4a'; ctx.fillRect(bx - 1.5, by, 1, 1); ctx.fillRect(bx + 0.5, by + 1, 1, 1); } }
@@ -845,7 +893,8 @@ function nameLink(id) { const n = NPC.get(id); if (n) return `<span class="link"
 function actText(n) {
   const a = n.act; if (!a) return 'überlegt, was zu tun ist';
   let t = ACT_TXT[a.type] || a.type;
-  if (a.type === 'craft' && a.what) t = (a.stage === 1 ? 'besorgt Material für ' : 'fertigt ') + (CRAFT_TXT[a.what] || a.what);
+  if (a.type === 'craft' && a.what) t = (a.stage === 1 ? 'besorgt Material für ' : 'fertigt ') + (CRAFT_TXT[a.what] || a.what) + (a.forStore ? ' für das Lager' : '');
+  if (a.type === 'fetch' && a.what) t = 'holt ' + (ITEM_NAME[a.what] || a.what) + ' aus dem Lager';
   if (a.type === 'social' && a.with) { const m = NPC.get(a.with); if (m) t = 'unterhält sich mit ' + m.name; }
   if (a.type === 'sleep' && a.stage === 0) t = 'geht schlafen';
   if (a.type === 'farm') t = { new: 'bricht ein neues Feld auf', sow: 'sät auf dem Feld', tend: 'jätet und pflegt das Feld', harvest: 'erntet das Feld' }[a.job] || t;
@@ -938,7 +987,7 @@ function renderInspector(full) {
       <div class="sec"><div class="t">${settlementName(T)}</div>${T.bld ? `<div class="small">Bauten: ${Object.entries(T.bld).map(([k, v]) => ({ oven: 'Backofen', kiln: 'Brennofen', temple: 'Tempel', wall: 'Stadtmauer' }[k] + (v < BUILD_NEED[k] ? ` (im Bau, ${Math.round(v / BUILD_NEED[k] * 100)} %)` : ''))).join(' · ')}</div>` : ''}
         <div>Oberhaupt: ${L ? nameLink(L.id) : '–'}</div>
         <div>Feuer: ${T.fire.lit ? '🔥 brennt' : '<b style="color:#d9644a">erloschen</b>'} · Vorräte: ${Math.round(T.store.food)} · Hütten: ${T.huts.filter(h => !h.stone).length}${T.huts.some(h => h.stone) ? ' · Steinhäuser: ' + T.huts.filter(h => h.stone).length : ''}${T.cleared ? ' · gerodet: ' + T.cleared + ' Felder' : ''}${T.pots ? ' · Töpfe: ' + T.pots : ''}</div>
-        <div>${tribeFields(T).length ? 'Felder: ' + tribeFields(T).length + ' · ' : ''}${(() => { const h = {}; for (const a of W.animals) if (a.tribe === T.id && HERD_K[a.k]) h[a.k] = (h[a.k] || 0) + 1; const N = { goat: 'Ziegen', sheep: 'Schafe', cattle: 'Rinder', pig: 'Schweine', donkey: 'Esel' }; return Object.entries(h).map(([k, v]) => N[k] + ': ' + v).join(' · ') + (Object.keys(h).length ? ' · ' : ''); })()}${(T.traps || []).length ? 'Reusen: ' + T.traps.length + ' · ' : ''}${T.storehouse ? 'Vorratshaus · ' : ''}${T.pal ? 'Palisade: ' + Math.round(T.pal / 24 * 100) + ' %' : ''}</div>
+        <div>${tribeFields(T).length ? 'Felder: ' + tribeFields(T).length + ' · ' : ''}${(() => { const h = {}; for (const a of W.animals) if (a.tribe === T.id && HERD_K[a.k]) h[a.k] = (h[a.k] || 0) + 1; const N = { goat: 'Ziegen', sheep: 'Schafe', cattle: 'Rinder', pig: 'Schweine', donkey: 'Esel' }; return Object.entries(h).map(([k, v]) => N[k] + ': ' + v).join(' · ') + (Object.keys(h).length ? ' · ' : ''); })()}${(T.traps || []).length ? 'Reusen: ' + T.traps.length + ' · ' : ''}${T.storehouse ? 'Vorratshaus · ' : ''}${(() => { const I = T.items || {}, N = { speer: 'Speere', bogen: 'Bögen', faustkeil: 'Steinwerkzeuge', korb: 'Körbe', kleidung: 'Fellkleider', tuch: 'Stoffkleider' }; const l = Object.entries(I).filter(([, v]) => v > 0).map(([k, v]) => v + ' ' + N[k]); return l.length ? 'Im Lager: ' + l.join(', ') + ' · ' : ''; })()}${T.pal ? 'Palisade: ' + Math.round(T.pal / 24 * 100) + ' %' : ''}</div>
         <div class="small">Ehe: ${(T.poly || 0) >= 0.5 ? 'Vielehe – angesehene Männer haben mehrere Frauen' : 'Einehe'}</div>
         <div class="small">Wintervorrat-Ziel: ${T.winterTarget} pro Kopf${T.winterTarget > 14 ? ' (aus Hungerwintern gelernt)' : ''}</div></div>
       ${T.cv ? `<div class="sec"><div class="t">Herrschaft</div><div><b>${esc(govOf(T).name)}</b>${L ? ` – ${esc(leaderTitle(T, L))}: ${nameLink(L.id)}` : ''}</div><div class="small">${esc(govOf(T).desc || '')}</div><div class="small">seit ${dateStr(T.govSince || T.founded)}</div></div>
@@ -1169,6 +1218,7 @@ function refreshTree() {
   const link = x => `<span class="tl ${S[x].st}" data-go="${x}">${TECH[x].icon} ${TECH[x].name}</span>`;
   td.innerHTML = `<h2>${T_.icon} ${T_.name}</h2><div class="small" style="margin-bottom:6px">${TCAT[T_.cat || 'handwerk']}</div><div>${esc(T_.desc)}</div>
     ${T_.eff ? `<div class="sec"><div class="t">Wirkung</div>${esc(T_.eff)}</div>` : ''}
+    ${T_.see ? `<div class="sec"><div class="t">Im Spiel zu sehen</div>${esc(T_.see)}</div>` : ''}
     <div class="sec"><div class="t">Braucht</div>${T_.req.length ? T_.req.map(link).join(' ') : '<span class="small">kein Vorwissen</span>'}${T_.condTxt ? `<div class="small" style="margin-top:4px">Lage: ${esc(T_.condTxt)}</div>` : ''}</div>
     <div class="sec"><div class="t">Die Idee entsteht beim</div>${esc(ctxs.join(', '))}${T_.ctx.experiment ? ', Herumtüfteln' : ''}</div>
     <div class="sec"><div class="t">Führt zu</div>${next.length ? next.map(link).join(' ') : '<span class="small">– Ende dieses Pfads (vorerst)</span>'}</div>

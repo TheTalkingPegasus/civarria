@@ -145,7 +145,7 @@ function spriteFrame(n, moving, t) {
 //  Pixel-Werkzeuge (Griff = Punkt g, an dem die Hand hält)
 // =====================================================================
 // o Umriss · w Holz · W Holz dunkel · r Stein · R Stein dunkel · x Sehne/Schnur · g grün · G grün dunkel · p Farbe · l hell · b Bronze · i Eisen
-const TOOL_PAL = { c: '#d0803e', C: '#9a5426', o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', r: '#a19d96', R: '#6e6a64', x: '#e8e0c8', g: '#5fae45', G: '#3d7a2c', p: '#c0392b', l: '#efe6cc', f: '#e0b03c', b: '#c8893a', i: '#c3c8d0' };
+const TOOL_PAL = { l: '#efe6cc', c: '#d0803e', C: '#9a5426', o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', r: '#a19d96', R: '#6e6a64', x: '#e8e0c8', g: '#5fae45', G: '#3d7a2c', p: '#c0392b', l: '#efe6cc', f: '#e0b03c', b: '#c8893a', i: '#c3c8d0' };
 const TOOLS = {
   keule:     { g: [1, 7], px: ['.....oo.', '....oWWo', '...oWwWo', '...owWo.', '..owo...', '.owo....', 'owo.....', 'oo......'] },
   faustkeil: { g: [1, 5], px: ['...oo.', '..orro', '.orrRo', 'orrRo.', 'oRRo..', 'oo....'] },
@@ -179,10 +179,10 @@ function heldTool(n, a) {
   if (!a) return null;
   const t = a.type;
   if (t === 'hunt' || t === 'raid' || t === 'defend' || t === 'watch') return n.tools.bogen > 0 ? 'bogen' : n.tools.speer > 0 ? (TK(tribeOf(n), 'kupfer_guss') ? 'kspeer' : 'speer') : (ageY(n) >= 13 ? 'keule' : null);
-  if (t === 'fish') return n.tools.speer > 0 ? 'speer' : null;
+  if (t === 'fish') return TK(tribeOf(n), 'netz') ? 'netz' : n.tools.speer > 0 ? 'speer' : null;
   const Tn = typeof tribeOf === 'function' ? tribeOf(n) : null;
   if (t === 'wood' || t === 'build' || t === 'construct') return TK(Tn, 'kupfer_guss') ? 'kupferaxt' : TK(Tn, 'steinbeil') ? 'beil' : n.tools.faustkeil > 0 ? 'faustkeil' : null;
-  if (t === 'craft') return a.what === 'tuch' && TK(Tn, 'spindel') ? 'spindel' : n.tools.faustkeil > 0 ? 'faustkeil' : null;
+  if (t === 'craft') return a.what === 'kleidung' && TK(Tn, 'nadel') ? 'nadel' : a.what === 'tuch' && TK(Tn, 'spindel') ? 'spindel' : n.tools.faustkeil > 0 ? 'faustkeil' : null;
   if (t === 'farm') return a.job === 'harvest' && TK(Tn, 'sichel') ? 'sichel' : a.job !== 'harvest' && TK(Tn, 'hakenpflug') ? 'pflug' : 'hacke';
   if (t === 'gather') return n.tools.korb > 0 ? 'korb' : null;
   if (t === 'paint') return 'pinsel';
@@ -236,3 +236,16 @@ const SHELF_PX = ['oooooooooooooo', 'owwwwwwwwwwwwo', 'oWbbWkkWyyWbbo', 'owwwwww
 const FURN_PAL = { o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', x: '#e8dcc0', c: '#b5482e', C: '#8a3020', b: '#a0583a', B: '#c47a50', r: '#a19d96', R: '#7e7a74', g: '#e8d8a0', y: '#c8a860', Y: '#a8884a', k: '#5a4a3a' };
 
 const WHEEL_PX = ['..oooo..', '.owwwwo.', 'owwWWwwo', 'owWooWwo', 'owWooWwo', 'owwWWwwo', '.owwwwo.', '..oooo..'];
+
+// Lager-Kram: was erforschtes Wissen sichtbar macht
+const PIT_PX = ['..rrrr..', '.rwwWwr.', 'rwWwwWwr', 'rwwWwwwr', '.rwwwWr.', '..rrrr..'];
+const RACK_PX = ['o............o', 'oooooooooooooo', 'o.g.g.g.g.g..o', 'o.G.G.G.G.G..o', 'o.g...g...g..o', 'o............o', 'o............o', 'o............o'];
+const FISHRACK_PX = ['o............o', 'oooooooooooooo', 'o.f.f.f.f.f..o', 'o.F.F.F.F.F..o', 'o.f.f.f.f.f..o', 'o............o', 'o............o', 'o............o'];
+const NETRACK_PX = ['o............o', 'oooooooooooooo', 'oxx.x.x.x.x.xo', 'o.x.x.x.x.x.xo', 'oxxxxxxxxxxxxo', 'o.x.x.x.x.x.xo', 'oxx.x.x.x.x.xo', 'o............o'];
+const JAR_PX = ['.oooo.', '.obbo.', 'obbbbo', 'obBbbo', 'obbbbo', 'obbbbo', '.obbo.', '..oo..'];
+const PWHEEL_PX = ['.oooooo.', 'owwwwwwo', '.oWWWWo.', '...oo...', '...oo...', '..oooo..'];
+const TABLET_PX = ['oooooo', 'olllll', 'oykyky', 'olllll', 'okykyo', 'olllll', 'oooooo'];
+const STALL_PX = ['cCcCcCcCcCcCcC', 'CcCcCcCcCcCcCc', 'oooooooooooooo', 'o.............o', 'o.ybb.yy.bbg.o', 'owwwwwwwwwwwwo', 'oWWWWWWWWWWWWo', 'o............o'];
+const CAMP_PAL = { o: '#3a2a1c', r: '#7e7a74', w: '#9a6a3c', W: '#6a4424', g: '#6fae45', G: '#3d7a2c', f: '#c3c8d0', F: '#8a909a', x: '#c8b48a', b: '#a0583a', B: '#c47a50', l: '#c8a070', k: '#7a5030', y: '#e0b03c', c: '#b5482e', C: '#e8dcc0' };
+TOOLS.netz = { g: [2, 4], px: ['.o.o.o.', 'oxoxoxo', '.oxoxo.', '..oxo..', '...o...', '...w...', '...w...'] };
+TOOLS.nadel = { g: [1, 3], px: ['..x', '.l.', 'l..', 'x..'] };

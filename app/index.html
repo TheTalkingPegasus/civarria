@@ -190,9 +190,10 @@ const hourNow = () => (W.tick % C.TPD) * 24 / C.TPD;
 const SEASON_LEN = [25, 25, 25, 45]; // langer Winter
 function seasonOf(d) { let r = d % C.DPY; for (let i = 0; i < 4; i++) { if (r < SEASON_LEN[i]) return i; r -= SEASON_LEN[i]; } return 3; }
 function dayInSeason(d) { let r = d % C.DPY; for (let i = 0; i < 4; i++) { if (r < SEASON_LEN[i]) return r; r -= SEASON_LEN[i]; } return r; }
-const seasonNow = () => seasonOf(dayNum());
+let _SC = -1, _SV = 0, _NC = -1, _NV = false;
+const seasonNow = () => { if (_SC !== W.tick) { _SC = W.tick; _SV = seasonOf(dayNum()); } return _SV; };
 const yearNow = () => Math.floor(dayNum() / C.DPY) + 1;
-const isNight = () => { const h = hourNow(); return h >= 21 || h < 5.5; };
+const isNight = () => { if (_NC !== W.tick) { _NC = W.tick; const h = hourNow(); _NV = h >= 21 || h < 5.5; } return _NV; };
 const ageY = n => (W.tick - n.born) / C.TPY;
 function dateStr(t) {
   const d = Math.floor(t / C.TPD);
@@ -504,7 +505,7 @@ const TILE_COST = [0, 22, 11, 10, 14, 16, 25];
 function flowFor(T) {
   let F = FLOW.get(T.id);
   const raft = !!T.raft;
-  if (F && F.cx === T.cx && F.cy === T.cy && F.raft === raft && F.hv === (W.hutVer || 0) && (F.pv === W.pathVer || W.tick - F.t < C.TPY)) return F;
+  if (F && F.cx === T.cx && F.cy === T.cy && F.raft === raft && (F.pv === W.pathVer || W.tick - F.t < C.TPY)) return F;
   // Nur ein Fenster um das Lager: große Welten bleiben bezahlbar
   const RW = FLOW_R, x0 = Math.max(0, (T.cx | 0) - RW), y0 = Math.max(0, (T.cy | 0) - RW), MW = Math.min(C.MW, (T.cx | 0) + RW + 1) - x0, MH = Math.min(C.MH, (T.cy | 0) + RW + 1) - y0, N = MW * MH, d = new Int32Array(N).fill(1e9);
   const G = (lx, ly) => (ly + y0) * C.MW + lx + x0;
@@ -532,6 +533,7 @@ function flowFor(T) {
 function moveVia(n, O, tx, ty, speed) { return moveHome(n, O, tx, ty, speed); }
 function reachable(T, x, y) { const F = flowFor(T); if (dist(x, y, T.cx, T.cy) > FLOW_R - 2) return true; return F.at((y | 0) * C.MW + (x | 0)) < 1e9; }
 function moveHome(n, T, tx, ty, speed) {
+  if (W.hutVer && dist(n.x, n.y, tx, ty) < 30 && nearTownAny(n.x, n.y) && nearTownAny(tx, ty)) return moveToward(n, tx, ty, speed); // im Dorf: Rasterweg statt Flussfeld
   if (dist(n.x, n.y, tx, ty) < 9 || dist(tx, ty, T.cx, T.cy) > 10) return moveToward(n, tx, ty, speed);
   const F = flowFor(T), x = n.x | 0, y = n.y | 0; let bi = -1, bd = F.at(y * C.MW + x);
   if (bd >= 1e9) return moveToward(n, tx, ty, speed);
@@ -648,7 +650,7 @@ function discover(n, k) {
     weben: 'dreht Ziegenhaar zu einem Faden und kreuzt die Fäden zu einem festen Stoff',
     floss: 'bindet am Ufer Stämme mit Fasern zusammen – und treibt hinüber ans andere Ufer',
     steinbau: 'schichtet gebrochene Felsbrocken zu einer Mauer, die keinem Sturm weicht',
-  }[k];
+  }[k] || TECH[k].how || `kommt auf die Idee: ${TECH[k].desc.replace(/\.$/, '')}`;
   if (first) W.discovered[k] = { t: W.tick, by: n.id, byName: n.name, tribe: T.id };
   const tribeHad = T.members.some(id => id !== n.id && NPC.get(id)?.know[k]);
   if (tribeHad) { memo(n, `kam selbst auf ${TECH[k].name}`); n.prestige -= 20; if (k === 'zaehmung') tameWolf(n); return; }
@@ -803,6 +805,7 @@ function decide(n) {
   return choose(n, opts);
 }
 function choose(n, opts) {
+  { const T = tribeOf(n); if (T) itemsAdjust(n, T, opts); }
   cultureAdjust(n, opts);
   let best = null; for (const o of opts) if (!best || o.score > best.score) best = o;
   if (!best) best = { type: 'idle' };
@@ -828,8 +831,9 @@ function startAct(n, o) {
       let hx = T.cx, hy = T.cy;
       let bed = null; if ((o.type === 'sleep' || o.type === 'warm' || o.type === 'rest') && T.huts.length) { const h = T.huts[n.id % T.huts.length]; hx = h.x; hy = h.y; if (h.lx !== undefined) { const B = bedsOf(h); bed = B[Math.floor(n.id / T.huts.length) % B.length]; } }
       const spread = o.type === 'sleep' && !T.huts.length ? 7 : 3.5;
-      if (bed) { a.tx = bed[0] + (rnd() - 0.5) * 0.3; a.ty = bed[1]; } else { a.tx = hx + (rnd() - 0.5) * spread; a.ty = hy + (rnd() - 0.5) * spread; } a.what = o.what; break;
+      if (bed) { a.tx = bed[0] + (rnd() - 0.5) * 0.3; a.ty = bed[1]; } else { a.tx = hx + (rnd() - 0.5) * spread; a.ty = hy + (rnd() - 0.5) * spread; } a.what = o.what; a.forStore = o.forStore; break;
     }
+    case 'fetch': { a.what = o.what; const p = itemSpot(T); a.tx = p[0] + (rnd() - 0.5) * 0.6; a.ty = p[1]; break; }
     case 'eat': {
       if (n.inv.food + n.inv.meat > 0) { a.tx = n.x; a.ty = n.y; } else {
         a.tx = T.cx + (rnd() - 0.5) * 3; a.ty = T.cy + (rnd() - 0.5) * 3;
@@ -993,6 +997,7 @@ function stepNpc(n) {
       break;
     }
     case 'craft': stepCraft(n, T, a, at); break;
+    case 'fetch': stepFetch(n, T, a, at); break;
     case 'build': stepBuild(n, T, a, at); break;
     case 'ritual': case 'preach': {
       if (a.stage === 0) { if (at()) a.stage = 1; break; }
@@ -1256,6 +1261,36 @@ function stepExplore(n, T, a, at) {
   if (arrived || a.t > 160) { n.prestige += 0.5; startAct(n, { type: 'deliver' }); }
 }
 
+// ---------- Gegenstände: anlegen, im Lager aufbewahren, von dort holen ----------
+const ITEM_NAME = { faustkeil: 'ein Steinwerkzeug', speer: 'einen Speer', bogen: 'Pfeil und Bogen', korb: 'einen Korb', kleidung: 'Fellkleidung', tuch: 'Kleidung aus Stoff' };
+function equip(n, T, what) {
+  if (what === 'faustkeil') n.tools.faustkeil = 40;
+  else if (what === 'speer') n.tools.speer = 25;
+  else if (what === 'kleidung') { n.tools.kleidung = C.DPY * 2; n.clothType = 'fur'; }
+  else if (what === 'tuch') { n.tools.kleidung = C.DPY * (TK(T, 'webstuhl') ? 4 : 3); n.clothType = TK(T, 'schaf') && TK(T, 'spindel') ? 'wool' : TK(T, 'webstuhl') ? 'linen' : 'woven'; }
+  else if (what === 'korb') n.tools.korb = 40;
+  else if (what === 'bogen') n.tools.bogen = 40;
+}
+// Wo liegen die Sachen? Im Vorratshaus – sonst am Werkzeuggestell beim Feuer
+const itemSpot = T => T.storehouse && T.storehouse.lx !== undefined ? [T.storehouse.lx + 2.5, T.storehouse.ly + 2] : [T.cx + 2.2, T.cy - 1.6];
+// Wer etwas braucht, holt es aus dem Lager, statt es selbst zu machen; geschickte Leute fertigen auf Vorrat
+function itemsAdjust(n, T, opts) {
+  const I = T.items || {};
+  for (const o of opts) if (o.type === 'craft' && ITEM_NAME[o.what] && !o.forStore && (I[o.what] || 0) > 0) { o.type = 'fetch'; o.score += 0.2; }
+  if (ageY(n) < 15 || isNight()) return;
+  const settled = T.huts.length > 0 || !!T.storehouse, skill = n.tr.geschick + (TK(T, 'handwerker') ? 0.25 : 0);
+  if (!settled || skill < 0.55) return;
+  const want = Math.max(1, Math.ceil(T.members.length / 6));
+  const can = { faustkeil: n.know.faustkeil, speer: n.know.speer, bogen: n.know.bogen, korb: n.know.flechten, kleidung: n.know.fellkleidung && T.store.hide >= 2, tuch: n.know.weben && T.store.fiber >= 4 };
+  for (const w in can) if (can[w] && (I[w] || 0) < want) { opts.push({ type: 'craft', what: w, forStore: true, score: 0.22 + skill * 0.25 + rnd() * 0.12 }); break; }
+}
+function stepFetch(n, T, a, at) {
+  if (a.stage === 0) { if (at() || ++a.t > 200) { a.stage = 1; a.t = 0; } return; }
+  if (++a.t < 3) return;
+  const I = T.items || {};
+  if ((I[a.what] || 0) > 0) { I[a.what]--; equip(n, T, a.what); memo(n, `hat ${ITEM_NAME[a.what]} aus dem Lager geholt`); }
+  n.act = null;
+}
 function stepCraft(n, T, a, at) {
   const need = { tuch: { fiber: 4 }, faustkeil: { stone: 1 }, speer: { wood: 1 }, kleidung: { hide: 2 }, korb: { fiber: 3 }, topf: { clay: 2 }, bogen: { wood: 1, fiber: 2 } }[a.what];
   if (a.stage === 0) {
@@ -1285,13 +1320,10 @@ function stepCraft(n, T, a, at) {
   if (++a.w < craftTime(T, a.what)) return; // die eigentliche Arbeit
   {
     for (const k in need) { const fromInv = Math.min(n.inv[k], need[k]); n.inv[k] -= fromInv; T.store[k] -= need[k] - fromInv; }
-    if (a.what === 'faustkeil') { n.tools.faustkeil = 40; insightCtx(n, 'knap', 1); }
-    else if (a.what === 'speer') n.tools.speer = 25;
-    else if (a.what === 'kleidung') { n.tools.kleidung = C.DPY * 2; n.clothType = 'fur'; }
-    else if (a.what === 'tuch') { n.tools.kleidung = C.DPY * (TK(T, 'webstuhl') ? 4 : 3); n.clothType = TK(T, 'schaf') && TK(T, 'spindel') ? 'wool' : TK(T, 'webstuhl') ? 'linen' : 'woven'; }
-    else if (a.what === 'korb') n.tools.korb = 40;
-    else if (a.what === 'topf') { T.pots += TK(T, 'toepferscheibe') ? 2 : 1; }
-    else if (a.what === 'bogen') n.tools.bogen = 40;
+    if (a.what === 'faustkeil') insightCtx(n, 'knap', 1);
+    if (a.what === 'topf') { T.pots += TK(T, 'toepferscheibe') ? 2 : 1; }
+    else if (a.forStore) { const I = T.items || (T.items = {}); I[a.what] = (I[a.what] || 0) + 1; memo(n, `hat ${ITEM_NAME[a.what] || a.what} für das Lager gefertigt`); }
+    else equip(n, T, a.what);
     n.act = null;
   }
 }
@@ -1920,6 +1952,7 @@ function stepRaid(n, T, a, at) {
 function die(n, cause, killer) {
   const T = tribeOf(n);
   n.alive = false; n.deathCause = cause; n.died = W.tick;
+  if (T && ageY(n) >= 14) { const I = T.items || (T.items = {}); for (const k of ['speer', 'bogen', 'korb', 'faustkeil']) if (n.tools[k] > 8) I[k] = (I[k] || 0) + 1; }
   const i = W.npcs.indexOf(n); if (i >= 0) W.npcs.splice(i, 1);
   NPC.delete(n.id);
   if (T) { const j = T.members.indexOf(n.id); if (j >= 0) T.members.splice(j, 1); }
@@ -3032,6 +3065,12 @@ function craftTime(T, what) {
   return Math.max(2, Math.round(d));
 }
 
+const TECH_SEE = {"faustkeil": "Steinwerkzeug in der Hand beim Holzen, Bauen und Herstellen", "speer": "Speer bei Jagd und Kampf", "feuer_machen": "Das Lagerfeuer wird neu entfacht, wenn es erlischt", "kochen": "Bratspieß über dem Lagerfeuer", "fellkleidung": "Fellkleidung im Herbst und Winter", "flechten": "Körbe am Lager und beim Sammeln", "fischen": "Fischgestell am Ufer, Fischer mit Speer", "huette": "Hütten aus Ästen und Rinde", "heilkraeuter": "Kräuter-Trockengestell am Lager, Heiler mit Kräutern", "bestattung": "Grabhügel", "malerei": "Felsbilder", "toepfern": "Tontöpfe am Lager und in den Häusern", "zaehmung": "Hunde begleiten ihre Menschen", "bogen": "Pfeil und Bogen bei Jagd und Kampf", "palisade": "Palisade rund ums Dorf", "viehzucht": "Gehege mit Ziegen", "reusen": "Reusen im seichten Wasser", "weben": "Gewebte Kleidung, Webstuhl in den Häusern", "floss": "Flöße auf dem Wasser", "steinbau": "Steinhäuser", "ackerbau": "Felder rund ums Dorf", "nadel": "Knochennadel beim Nähen von Kleidung", "netz": "Fischer mit Netz, Netz-Trockengestell am Ufer", "mahlstein": "Mahlstein am Lager und in den Häusern", "einbaum": "Einbaum am Ufer und auf dem Wasser", "vorratsgrube": "Abgedeckte Vorratsgruben am Lager – je mehr Vorrat, desto mehr", "sichel": "Sichel bei der Ernte", "schmuck": "Angesehene tragen Ketten aus Muscheln und Zähnen", "saatgut": "Kräftigere Ernte (nur in den Zahlen)", "huelsen": "Felder mit Linsen und Erbsen zwischen dem Korn", "schaf": "Schafe im Gehege", "rind": "Rinder im Gehege", "schwein": "Schweine im Gehege", "lehmziegel": "Lehmhäuser mit Flachdach, Ziegel trocknen im Werkhof", "steinbeil": "Geschliffenes Beil beim Holzen und Bauen", "backofen": "Backofen im Werkhof", "bier": "Große Krüge am Lager", "spindel": "Spindel beim Weben", "webstuhl": "Leinenkleidung", "milch": "Milchkrüge am Gehege", "bewaesserung": "Kanäle an den Feldern", "hakenpflug": "Pflug auf dem Feld", "ochsen": "Ochse zieht den Pflug", "brennofen": "Brennofen mit Rauch im Werkhof", "toepferscheibe": "Töpferscheibe im Werkhof", "kupfer_haemmern": "Kupferschmuck an Angesehenen", "kupfer_guss": "Kupferbeil und Kupferspeer", "esel": "Esel im Gehege, Händler mit Packesel", "segelboot": "Schilfboot mit Segel", "rad": "Scheibenräder im Werkhof", "wagen": "Karren am Vorratshaus, Händler mit Wagen", "dattel": "Dattelpalmen an den Feldern", "zaehlsteine": "Schale mit Zählsteinen im Vorratshaus", "siegel": "Gesiegelte Kisten im Vorratshaus", "masse": "Gerechterer Handel (nur in den Zahlen)", "kalender": "Steinkreis am Dorfrand", "zahlen": "Grundlage der Schrift (nur in den Zahlen)", "rationen": "Tontafel im Vorratshaus", "tempelbau": "Stufentempel", "schrift": "Tontafeln mit Zeichen im Vorratshaus", "schule": "Kinder lernen schneller (nur in den Zahlen)", "fernhandel": "Marktstand im Dorf, Händler unterwegs", "handwerker": "Schnellere Werkstattarbeit (nur in den Zahlen)", "tempelwirtschaft": "Priesterherrschaft wird möglich", "stadtplanung": "Stadtmauer aus Ziegeln", "gerichte": "Weniger Streit (nur in der Chronik)", "heer": "Kämpfer mit Kupferhelm und Schild", "koenigtum": "Krone auf dem Haupt des Herrschers", "schuldknechtschaft": "Unfreie im Dorf (Menschen-Ansicht)"};
+for (const k in TECH_SEE) if (TECH[k]) TECH[k].see = TECH_SEE[k];
+
+const TECH_HOW = {"nadel": "bohrt ein Loch in einen Knochensplitter und fädelt eine Sehne hindurch", "netz": "knüpft Schnüre zu einem Gitter und zieht damit einen ganzen Schwarm an Land", "mahlstein": "zerreibt Körner zwischen zwei Steinen zu Mehl", "einbaum": "höhlt einen Baumstamm mit Feuer und Stein aus und setzt sich hinein", "vorratsgrube": "gräbt eine Grube, legt sie mit Rinde aus und deckt die Vorräte zu", "sichel": "setzt Feuersteinklingen in ein gebogenes Holz und schneidet damit Gras im Bündel", "schmuck": "reiht Muscheln und Zähne auf eine Schnur und trägt sie um den Hals", "saatgut": "legt die dicksten Körner beiseite, statt sie zu essen", "huelsen": "sät Linsen zwischen das Korn", "schaf": "treibt ein Mufflon in den Pferch", "rind": "zähmt ein junges Auerochsenkalb", "schwein": "lockt ein Wildschwein mit Abfällen an, bis es bleibt", "lehmziegel": "presst Lehm mit Stroh in eine Holzform und lässt ihn in der Sonne trocknen", "steinbeil": "schleift einen Stein so lange, bis seine Schneide glänzt", "backofen": "formt eine Kuppel aus Lehm und backt darin Fladen", "bier": "vergisst einen Topf mit nassem Korn – und findet ein schäumendes Getränk", "spindel": "steckt einen Stein auf einen Stab und dreht damit Garn", "webstuhl": "spannt Fäden mit Steingewichten zwischen zwei Balken", "milch": "melkt eine Ziege und lässt die Milch säuern", "bewaesserung": "gräbt einen Graben vom Fluss zum Feld", "hakenpflug": "zieht einen gebogenen Ast durch die Erde", "ochsen": "spannt einen Ochsen vor den Pflug", "brennofen": "mauert um das Feuer eine Kammer aus Lehm", "toepferscheibe": "setzt eine Scheibe auf einen Zapfen und dreht sie beim Töpfern", "kupfer_haemmern": "hämmert einen grün schimmernden Stein zu einer Perle", "kupfer_guss": "sieht flüssiges Metall aus dem Ofen rinnen und gießt es in eine Form", "esel": "lädt einem Wildesel Säcke auf", "segelboot": "spannt ein Tuch auf ein Schilfboot und lässt sich vom Wind treiben", "rad": "nimmt die Scheibe von der Töpferachse und rollt sie über den Boden", "wagen": "baut zwei Räder unter einen Kasten und spannt einen Ochsen davor", "dattel": "pflanzt Dattelkerne an den Rand des Kanals", "zaehlsteine": "formt für jeden Krug eine kleine Tonmarke", "siegel": "schnitzt ein Zeichen in einen Stein und drückt es in Ton", "masse": "legt fest, wie viel ein Krug fasst und ein Stein wiegt", "kalender": "zählt die Monde zwischen zwei Sonnenwenden", "zahlen": "bündelt die Zählsteine in Sechzigern", "rationen": "teilt jedem genau zu, was ihm zusteht", "tempelbau": "errichtet den Göttern ein Haus auf einer Plattform", "schrift": "ritzt Zeichen in eine Tontafel, die jeder lesen kann, der sie gelernt hat", "schule": "versammelt Kinder um sich und lehrt sie die Zeichen", "fernhandel": "zieht mit Waren zu fernen Sippen", "handwerker": "arbeitet nur noch in der Werkstatt und tauscht seine Ware gegen Essen", "tempelwirtschaft": "lässt die Ernte im Tempel sammeln und verteilen", "stadtplanung": "zieht Gassen und eine Mauer um die Siedlung", "gerichte": "lässt Streit vor den Alten verhandeln", "heer": "stellt Kämpfer auf, die nur für den Krieg da sind", "koenigtum": "lässt sich als König ausrufen", "schuldknechtschaft": "verlangt Arbeit für eine Schuld, die nicht bezahlt wird"};
+for (const k in TECH_HOW) if (TECH[k]) TECH[k].how = TECH_HOW[k];
+
 // =====================================================================
 //  SIEDLUNGEN IM RASTER
 //  Jede Sippe legt ihr Lager auf dem Kachelraster an: ein Platz mit dem
@@ -3045,11 +3084,11 @@ function townOrigin(T) { if (!T.town || T.town.cx !== (T.cx | 0) || T.town.cy !=
 const lotXY = (O, i, j) => [O.cx - 2 + i * LOT, O.cy - 2 + j * LOT]; // linke obere Kachel
 // Was ist vom Platz aus trockenen Fußes erreichbar? (Parzellen nur dort, sonst stehen Häuser jenseits des Bachs)
 function townReach(T, O) {
-  if (O.reach && O.reachV === (W.hutVer || 0)) return O.reach;
+  if (O.reach && O.reachV === (W.hutVer || 0) + ':' + (T.townVer || 0)) return O.reach;
   const seen = new Set(), q = [O.cy * C.MW + O.cx]; seen.add(q[0]);
   while (q.length) { const i = q.pop(), x = i % C.MW, y = (i / C.MW) | 0;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (Math.abs(X - O.cx) > 40 || Math.abs(Y - O.cy) > 40 || X < 0 || Y < 0 || X >= C.MW || Y >= C.MH) continue; const j = Y * C.MW + X; if (seen.has(j) || W.t[j] < T_SHORE) continue; const h = houseAt(X, Y); if (h && !(X === h.lx + 2 && Y === h.ly + h.h - 1)) continue; seen.add(j); q.push(j); } }
-  O.reach = seen; O.reachV = W.hutVer || 0; return seen;
+  O.reach = seen; O.reachV = (W.hutVer || 0) + ':' + (T.townVer || 0); return seen;
 }
 function lotOK(T, O, i, j) {
   const [x0, y0] = lotXY(O, i, j);
@@ -3081,7 +3120,7 @@ function allocLot(T, kind, wl = 1, hl = 1) {
       for (const bu of bushesNear(P.cx, P.cy, 4)) if (bu.x >= x0 && bu.x < x0 + P.w && bu.y >= y0 && bu.y < y0 + P.h) { bu.gone = 1; bu.f = 0; bu.max = 0; }
       for (const id of T.members) { const m = NPC.get(id); if (m && m.spots.length) m.spots = m.spots.filter(s => !s.b.gone); }
       for (let y = y0; y < y0 + P.h; y++) for (let x = x0; x < x0 + P.w; x++) { const k = y * C.MW + x; if (W.t[k] === T_FOREST) { W.t[k] = T_GRASS; W.cut[k] = 'f'; if (HOOKS.onTile) HOOKS.onTile(x, y); } }
-      T.townVer = (T.townVer || 0) + 1; W.hutVer = (W.hutVer || 0) + 1;
+      T.townVer = (T.townVer || 0) + 1; if (!W.hutVer) W.hutVer = 1;
       return P;
     }
   }
@@ -3106,18 +3145,23 @@ function houseOK(e, x, y) {
   return false;
 }
 // Wo liegt welches Haus? (für Tür-Wege und Wärme)
-let HMAP = null, HMAPV = -1;
+let HMAP = null, HMAPV = -1, HLIST = [];
 function houseAt(x, y) {
-  if (HMAPV !== (W.hutVer || 0) || !HMAP) { HMAP = new Map(); HMAPV = W.hutVer || 0; for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts)) if (h.lx !== undefined) for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) HMAP.set(yy * C.MW + xx, h); }
-  return HMAP.get((y | 0) * C.MW + (x | 0));
+  if (HMAPV !== (W.hutVer || 0) || !HMAP || HMAP.length !== C.MW * C.MH) {
+    HMAPV = W.hutVer || 0; if (!HMAP || HMAP.length !== C.MW * C.MH) HMAP = new Int32Array(C.MW * C.MH); else HMAP.fill(0); HLIST = [null];
+    for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts)) if (h.lx !== undefined) { const id = HLIST.length; HLIST.push(h); for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) HMAP[yy * C.MW + xx] = id; }
+  }
+  x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return undefined;
+  const id = HMAP[y * C.MW + x]; return id ? HLIST[id] : undefined;
 }
 // ---------------------------------------------------------------- Laufen in der Siedlung
 // Häuser betritt und verlässt man nur durch die Tür, Palisade und Mauer nur durch die Tore.
 // Ist der gerade Weg verstellt, sucht A* einen Weg über das Kachelraster.
 let WMAP = null, WMAPV = '';
+let WMAPT = -1;
 function wallAt(x, y) {
-  const v = (W.hutVer || 0) + ':' + W.tribes.reduce((a, T) => a + (T.alive && T.town ? (T.pal || 0) + (T.bld?.wall || 0) * 100 + (T.townVer || 0) * 7 : 0), 0);
-  if (v !== WMAPV) { WMAPV = v; WMAP = new Set(); for (const T of W.tribes) { if (!T.alive || !T.town) continue; const isW = (T.bld?.wall || 0) > 0, prog = isW ? T.bld.wall / BUILD_NEED.wall : (T.pal || 0) / 24; if (prog <= 0) continue; const R = townRect(T), per = townPerimeter(R), n = Math.round(per.length * Math.min(1, prog)); for (let k = 0; k < n; k++) WMAP.add(per[k][1] * C.MW + per[k][0]); } }
+  if (WMAPT !== W.tick) { WMAPT = W.tick; const v = (W.hutVer || 0) + ':' + W.tribes.reduce((a, T) => a + (T.alive && T.town ? (T.pal || 0) + (T.bld?.wall || 0) * 100 + (T.townVer || 0) * 7 : 0), 0);
+  if (v !== WMAPV) { WMAPV = v; WMAP = new Set(); for (const T of W.tribes) { if (!T.alive || !T.town) continue; const isW = (T.bld?.wall || 0) > 0, prog = isW ? T.bld.wall / BUILD_NEED.wall : (T.pal || 0) / 24; if (prog <= 0) continue; const R = townRect(T), per = townPerimeter(R), n = Math.round(per.length * Math.min(1, prog)); for (let k = 0; k < n; k++) WMAP.add(per[k][1] * C.MW + per[k][0]); } } }
   return WMAP.has((y | 0) * C.MW + (x | 0));
 }
 // darf man von Kachel (ax,ay) nach (bx,by)?
@@ -3139,26 +3183,32 @@ function lineClear(e, tx, ty) {
     px = x; py = y; }
   return true;
 }
+const AS_MAX = 9000, AS_G = new Float32Array(AS_MAX), AS_FROM = new Int32Array(AS_MAX), AS_STAMP = new Int32Array(AS_MAX), AS_HK = new Float32Array(AS_MAX * 4), AS_HV = new Int32Array(AS_MAX * 4); let AS_GEN = 0;
 function aStar(e, tx, ty) {
   const sx = e.x | 0, sy = e.y | 0, gx = tx | 0, gy = ty | 0;
-  const x0 = Math.min(sx, gx) - 12, y0 = Math.min(sy, gy) - 12, w = Math.abs(sx - gx) + 25, h = Math.abs(sy - gy) + 25;
-  if (w * h > 9000) return null;
-  const idx = (x, y) => (y - y0) * w + (x - x0), g = new Float32Array(w * h).fill(1e9), from = new Int32Array(w * h).fill(-1), open = [[0, sx, sy]];
-  g[idx(sx, sy)] = 0; let it = 0;
-  while (open.length && it++ < 6000) {
-    let bi = 0; for (let i = 1; i < open.length; i++) if (open[i][0] < open[bi][0]) bi = i;
-    const [, x, y] = open[bi]; open[bi] = open[open.length - 1]; open.pop();
-    if (x === gx && y === gy) { const pts = []; let c = idx(x, y); while (c >= 0 && c !== idx(sx, sy)) { pts.push([(c % w) + x0 + 0.5, ((c / w) | 0) + y0 + 0.5]); c = from[c]; } return pts.reverse(); }
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < x0 || Y < y0 || X >= x0 + w || Y >= y0 + h) continue; if (!stepOK(e, x, y, X, Y)) continue;
-      const j = idx(X, Y), ng = g[idx(x, y)] + (W.path[Y * C.MW + X] ? 0.7 : 1); if (ng < g[j]) { g[j] = ng; from[j] = idx(x, y); open.push([ng + Math.abs(X - gx) + Math.abs(Y - gy), X, Y]); } }
+  const x0 = Math.min(sx, gx) - 8, y0 = Math.min(sy, gy) - 8, w = Math.abs(sx - gx) + 17, h = Math.abs(sy - gy) + 17, N = w * h;
+  if (N > AS_MAX) return null;
+  const gen = ++AS_GEN, g = AS_G, from = AS_FROM, st = AS_STAMP, hk = AS_HK, hv = AS_HV; let hn = 0;
+  const G = i => st[i] === gen ? g[i] : 1e9;
+  const push = (v, k) => { let i = hn++; while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; } hk[i] = k; hv[i] = v; };
+  const pop = () => { const v = hv[0], lk = hk[--hn], lv = hv[hn]; let i = 0; while (true) { let c = 2 * i + 1; if (c >= hn) break; if (c + 1 < hn && hk[c + 1] < hk[c]) c++; if (hk[c] >= lk) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; } hk[i] = lk; hv[i] = lv; return v; };
+  const s = (sy - y0) * w + (sx - x0), goal = (gy - y0) * w + (gx - x0); st[s] = gen; g[s] = 0; from[s] = -1; push(s, 0); let it = 0;
+  while (hn > 0 && it++ < 2500) {
+    const c = pop(); if (c === goal) { const pts = []; let q = c; while (q >= 0 && q !== s) { pts.push([(q % w) + x0 + 0.5, ((q / w) | 0) + y0 + 0.5]); q = from[q]; } return pts.reverse(); }
+    const x = (c % w) + x0, y = ((c / w) | 0) + y0, gc = g[c];
+    for (let d = 0; d < 4; d++) { const X = x + (d === 0 ? 1 : d === 1 ? -1 : 0), Y = y + (d === 2 ? 1 : d === 3 ? -1 : 0); if (X < x0 || Y < y0 || X >= x0 + w || Y >= y0 + h) continue;
+      const j = (Y - y0) * w + (X - x0), ng = gc + (W.path[Y * C.MW + X] ? 0.7 : 1); if (ng >= G(j) || hn >= AS_MAX * 4 - 1 || !stepOK(e, x, y, X, Y)) continue; st[j] = gen; g[j] = ng; from[j] = c; push(j, ng + 1.2 * (Math.abs(X - gx) + Math.abs(Y - gy))); }
   }
   return null;
 }
 function navMove(e, tx, ty, speed) {
   if (e.ghost > 0) { e.ghost--; return moveStep(e, tx, ty, speed); }
   let N = e.nav;
-  if (!N || Math.abs(N.tx - tx) > 0.01 || Math.abs(N.ty - ty) > 0.01 || N.v !== WMAPV + '|' + (W.hutVer || 0)) {
-    if (lineClear(e, tx, ty)) { e.nav = null; return moveStep(e, tx, ty, speed); }
+  if (N && N.clear && N.tx === tx && N.ty === ty && W.tick < N.until) return moveStep(e, tx, ty, speed);
+  if (N && !N.clear && (Math.abs(N.tx - tx) > 0.01 || Math.abs(N.ty - ty) > 0.01) && Math.abs(N.tx - tx) + Math.abs(N.ty - ty) < 1.5 && houseAt(tx, ty) === houseAt(N.tx, N.ty)) { N.tx = tx; N.ty = ty; } // Ziel hat sich nur ein wenig bewegt
+  if (!N || N.clear || Math.abs(N.tx - tx) > 0.01 || Math.abs(N.ty - ty) > 0.01) {
+    if (lineClear(e, tx, ty)) { e.nav = { clear: 1, tx, ty, until: W.tick + 10 }; return moveStep(e, tx, ty, speed); }
+    if (e.act && (e.act.type === 'social' || e.act.type === 'play')) return moveStep(e, tx, ty, speed); // Plaudern: kein Umweg-Planen
     const pts = aStar(e, tx, ty);
     if (!pts) { e.ghost = 40; e.nav = null; return moveStep(e, tx, ty, speed); }
     N = e.nav = { tx, ty, v: WMAPV + '|' + (W.hutVer || 0), pts, i: 0, f: 0 };
@@ -3242,9 +3292,10 @@ const hourNow = () => (W.tick % C.TPD) * 24 / C.TPD;
 const SEASON_LEN = [25, 25, 25, 45]; // langer Winter
 function seasonOf(d) { let r = d % C.DPY; for (let i = 0; i < 4; i++) { if (r < SEASON_LEN[i]) return i; r -= SEASON_LEN[i]; } return 3; }
 function dayInSeason(d) { let r = d % C.DPY; for (let i = 0; i < 4; i++) { if (r < SEASON_LEN[i]) return r; r -= SEASON_LEN[i]; } return r; }
-const seasonNow = () => seasonOf(dayNum());
+let _SC = -1, _SV = 0, _NC = -1, _NV = false;
+const seasonNow = () => { if (_SC !== W.tick) { _SC = W.tick; _SV = seasonOf(dayNum()); } return _SV; };
 const yearNow = () => Math.floor(dayNum() / C.DPY) + 1;
-const isNight = () => { const h = hourNow(); return h >= 21 || h < 5.5; };
+const isNight = () => { if (_NC !== W.tick) { _NC = W.tick; const h = hourNow(); _NV = h >= 21 || h < 5.5; } return _NV; };
 const ageY = n => (W.tick - n.born) / C.TPY;
 function dateStr(t) {
   const d = Math.floor(t / C.TPD);
@@ -3556,7 +3607,7 @@ const TILE_COST = [0, 22, 11, 10, 14, 16, 25];
 function flowFor(T) {
   let F = FLOW.get(T.id);
   const raft = !!T.raft;
-  if (F && F.cx === T.cx && F.cy === T.cy && F.raft === raft && F.hv === (W.hutVer || 0) && (F.pv === W.pathVer || W.tick - F.t < C.TPY)) return F;
+  if (F && F.cx === T.cx && F.cy === T.cy && F.raft === raft && (F.pv === W.pathVer || W.tick - F.t < C.TPY)) return F;
   // Nur ein Fenster um das Lager: große Welten bleiben bezahlbar
   const RW = FLOW_R, x0 = Math.max(0, (T.cx | 0) - RW), y0 = Math.max(0, (T.cy | 0) - RW), MW = Math.min(C.MW, (T.cx | 0) + RW + 1) - x0, MH = Math.min(C.MH, (T.cy | 0) + RW + 1) - y0, N = MW * MH, d = new Int32Array(N).fill(1e9);
   const G = (lx, ly) => (ly + y0) * C.MW + lx + x0;
@@ -3584,6 +3635,7 @@ function flowFor(T) {
 function moveVia(n, O, tx, ty, speed) { return moveHome(n, O, tx, ty, speed); }
 function reachable(T, x, y) { const F = flowFor(T); if (dist(x, y, T.cx, T.cy) > FLOW_R - 2) return true; return F.at((y | 0) * C.MW + (x | 0)) < 1e9; }
 function moveHome(n, T, tx, ty, speed) {
+  if (W.hutVer && dist(n.x, n.y, tx, ty) < 30 && nearTownAny(n.x, n.y) && nearTownAny(tx, ty)) return moveToward(n, tx, ty, speed); // im Dorf: Rasterweg statt Flussfeld
   if (dist(n.x, n.y, tx, ty) < 9 || dist(tx, ty, T.cx, T.cy) > 10) return moveToward(n, tx, ty, speed);
   const F = flowFor(T), x = n.x | 0, y = n.y | 0; let bi = -1, bd = F.at(y * C.MW + x);
   if (bd >= 1e9) return moveToward(n, tx, ty, speed);
@@ -3700,7 +3752,7 @@ function discover(n, k) {
     weben: 'dreht Ziegenhaar zu einem Faden und kreuzt die Fäden zu einem festen Stoff',
     floss: 'bindet am Ufer Stämme mit Fasern zusammen – und treibt hinüber ans andere Ufer',
     steinbau: 'schichtet gebrochene Felsbrocken zu einer Mauer, die keinem Sturm weicht',
-  }[k];
+  }[k] || TECH[k].how || `kommt auf die Idee: ${TECH[k].desc.replace(/\.$/, '')}`;
   if (first) W.discovered[k] = { t: W.tick, by: n.id, byName: n.name, tribe: T.id };
   const tribeHad = T.members.some(id => id !== n.id && NPC.get(id)?.know[k]);
   if (tribeHad) { memo(n, `kam selbst auf ${TECH[k].name}`); n.prestige -= 20; if (k === 'zaehmung') tameWolf(n); return; }
@@ -3855,6 +3907,7 @@ function decide(n) {
   return choose(n, opts);
 }
 function choose(n, opts) {
+  { const T = tribeOf(n); if (T) itemsAdjust(n, T, opts); }
   cultureAdjust(n, opts);
   let best = null; for (const o of opts) if (!best || o.score > best.score) best = o;
   if (!best) best = { type: 'idle' };
@@ -3880,8 +3933,9 @@ function startAct(n, o) {
       let hx = T.cx, hy = T.cy;
       let bed = null; if ((o.type === 'sleep' || o.type === 'warm' || o.type === 'rest') && T.huts.length) { const h = T.huts[n.id % T.huts.length]; hx = h.x; hy = h.y; if (h.lx !== undefined) { const B = bedsOf(h); bed = B[Math.floor(n.id / T.huts.length) % B.length]; } }
       const spread = o.type === 'sleep' && !T.huts.length ? 7 : 3.5;
-      if (bed) { a.tx = bed[0] + (rnd() - 0.5) * 0.3; a.ty = bed[1]; } else { a.tx = hx + (rnd() - 0.5) * spread; a.ty = hy + (rnd() - 0.5) * spread; } a.what = o.what; break;
+      if (bed) { a.tx = bed[0] + (rnd() - 0.5) * 0.3; a.ty = bed[1]; } else { a.tx = hx + (rnd() - 0.5) * spread; a.ty = hy + (rnd() - 0.5) * spread; } a.what = o.what; a.forStore = o.forStore; break;
     }
+    case 'fetch': { a.what = o.what; const p = itemSpot(T); a.tx = p[0] + (rnd() - 0.5) * 0.6; a.ty = p[1]; break; }
     case 'eat': {
       if (n.inv.food + n.inv.meat > 0) { a.tx = n.x; a.ty = n.y; } else {
         a.tx = T.cx + (rnd() - 0.5) * 3; a.ty = T.cy + (rnd() - 0.5) * 3;
@@ -4045,6 +4099,7 @@ function stepNpc(n) {
       break;
     }
     case 'craft': stepCraft(n, T, a, at); break;
+    case 'fetch': stepFetch(n, T, a, at); break;
     case 'build': stepBuild(n, T, a, at); break;
     case 'ritual': case 'preach': {
       if (a.stage === 0) { if (at()) a.stage = 1; break; }
@@ -4308,6 +4363,36 @@ function stepExplore(n, T, a, at) {
   if (arrived || a.t > 160) { n.prestige += 0.5; startAct(n, { type: 'deliver' }); }
 }
 
+// ---------- Gegenstände: anlegen, im Lager aufbewahren, von dort holen ----------
+const ITEM_NAME = { faustkeil: 'ein Steinwerkzeug', speer: 'einen Speer', bogen: 'Pfeil und Bogen', korb: 'einen Korb', kleidung: 'Fellkleidung', tuch: 'Kleidung aus Stoff' };
+function equip(n, T, what) {
+  if (what === 'faustkeil') n.tools.faustkeil = 40;
+  else if (what === 'speer') n.tools.speer = 25;
+  else if (what === 'kleidung') { n.tools.kleidung = C.DPY * 2; n.clothType = 'fur'; }
+  else if (what === 'tuch') { n.tools.kleidung = C.DPY * (TK(T, 'webstuhl') ? 4 : 3); n.clothType = TK(T, 'schaf') && TK(T, 'spindel') ? 'wool' : TK(T, 'webstuhl') ? 'linen' : 'woven'; }
+  else if (what === 'korb') n.tools.korb = 40;
+  else if (what === 'bogen') n.tools.bogen = 40;
+}
+// Wo liegen die Sachen? Im Vorratshaus – sonst am Werkzeuggestell beim Feuer
+const itemSpot = T => T.storehouse && T.storehouse.lx !== undefined ? [T.storehouse.lx + 2.5, T.storehouse.ly + 2] : [T.cx + 2.2, T.cy - 1.6];
+// Wer etwas braucht, holt es aus dem Lager, statt es selbst zu machen; geschickte Leute fertigen auf Vorrat
+function itemsAdjust(n, T, opts) {
+  const I = T.items || {};
+  for (const o of opts) if (o.type === 'craft' && ITEM_NAME[o.what] && !o.forStore && (I[o.what] || 0) > 0) { o.type = 'fetch'; o.score += 0.2; }
+  if (ageY(n) < 15 || isNight()) return;
+  const settled = T.huts.length > 0 || !!T.storehouse, skill = n.tr.geschick + (TK(T, 'handwerker') ? 0.25 : 0);
+  if (!settled || skill < 0.55) return;
+  const want = Math.max(1, Math.ceil(T.members.length / 6));
+  const can = { faustkeil: n.know.faustkeil, speer: n.know.speer, bogen: n.know.bogen, korb: n.know.flechten, kleidung: n.know.fellkleidung && T.store.hide >= 2, tuch: n.know.weben && T.store.fiber >= 4 };
+  for (const w in can) if (can[w] && (I[w] || 0) < want) { opts.push({ type: 'craft', what: w, forStore: true, score: 0.22 + skill * 0.25 + rnd() * 0.12 }); break; }
+}
+function stepFetch(n, T, a, at) {
+  if (a.stage === 0) { if (at() || ++a.t > 200) { a.stage = 1; a.t = 0; } return; }
+  if (++a.t < 3) return;
+  const I = T.items || {};
+  if ((I[a.what] || 0) > 0) { I[a.what]--; equip(n, T, a.what); memo(n, `hat ${ITEM_NAME[a.what]} aus dem Lager geholt`); }
+  n.act = null;
+}
 function stepCraft(n, T, a, at) {
   const need = { tuch: { fiber: 4 }, faustkeil: { stone: 1 }, speer: { wood: 1 }, kleidung: { hide: 2 }, korb: { fiber: 3 }, topf: { clay: 2 }, bogen: { wood: 1, fiber: 2 } }[a.what];
   if (a.stage === 0) {
@@ -4337,13 +4422,10 @@ function stepCraft(n, T, a, at) {
   if (++a.w < craftTime(T, a.what)) return; // die eigentliche Arbeit
   {
     for (const k in need) { const fromInv = Math.min(n.inv[k], need[k]); n.inv[k] -= fromInv; T.store[k] -= need[k] - fromInv; }
-    if (a.what === 'faustkeil') { n.tools.faustkeil = 40; insightCtx(n, 'knap', 1); }
-    else if (a.what === 'speer') n.tools.speer = 25;
-    else if (a.what === 'kleidung') { n.tools.kleidung = C.DPY * 2; n.clothType = 'fur'; }
-    else if (a.what === 'tuch') { n.tools.kleidung = C.DPY * (TK(T, 'webstuhl') ? 4 : 3); n.clothType = TK(T, 'schaf') && TK(T, 'spindel') ? 'wool' : TK(T, 'webstuhl') ? 'linen' : 'woven'; }
-    else if (a.what === 'korb') n.tools.korb = 40;
-    else if (a.what === 'topf') { T.pots += TK(T, 'toepferscheibe') ? 2 : 1; }
-    else if (a.what === 'bogen') n.tools.bogen = 40;
+    if (a.what === 'faustkeil') insightCtx(n, 'knap', 1);
+    if (a.what === 'topf') { T.pots += TK(T, 'toepferscheibe') ? 2 : 1; }
+    else if (a.forStore) { const I = T.items || (T.items = {}); I[a.what] = (I[a.what] || 0) + 1; memo(n, `hat ${ITEM_NAME[a.what] || a.what} für das Lager gefertigt`); }
+    else equip(n, T, a.what);
     n.act = null;
   }
 }
@@ -4972,6 +5054,7 @@ function stepRaid(n, T, a, at) {
 function die(n, cause, killer) {
   const T = tribeOf(n);
   n.alive = false; n.deathCause = cause; n.died = W.tick;
+  if (T && ageY(n) >= 14) { const I = T.items || (T.items = {}); for (const k of ['speer', 'bogen', 'korb', 'faustkeil']) if (n.tools[k] > 8) I[k] = (I[k] || 0) + 1; }
   const i = W.npcs.indexOf(n); if (i >= 0) W.npcs.splice(i, 1);
   NPC.delete(n.id);
   if (T) { const j = T.members.indexOf(n.id); if (j >= 0) T.members.splice(j, 1); }
@@ -6084,6 +6167,12 @@ function craftTime(T, what) {
   return Math.max(2, Math.round(d));
 }
 
+const TECH_SEE = {"faustkeil": "Steinwerkzeug in der Hand beim Holzen, Bauen und Herstellen", "speer": "Speer bei Jagd und Kampf", "feuer_machen": "Das Lagerfeuer wird neu entfacht, wenn es erlischt", "kochen": "Bratspieß über dem Lagerfeuer", "fellkleidung": "Fellkleidung im Herbst und Winter", "flechten": "Körbe am Lager und beim Sammeln", "fischen": "Fischgestell am Ufer, Fischer mit Speer", "huette": "Hütten aus Ästen und Rinde", "heilkraeuter": "Kräuter-Trockengestell am Lager, Heiler mit Kräutern", "bestattung": "Grabhügel", "malerei": "Felsbilder", "toepfern": "Tontöpfe am Lager und in den Häusern", "zaehmung": "Hunde begleiten ihre Menschen", "bogen": "Pfeil und Bogen bei Jagd und Kampf", "palisade": "Palisade rund ums Dorf", "viehzucht": "Gehege mit Ziegen", "reusen": "Reusen im seichten Wasser", "weben": "Gewebte Kleidung, Webstuhl in den Häusern", "floss": "Flöße auf dem Wasser", "steinbau": "Steinhäuser", "ackerbau": "Felder rund ums Dorf", "nadel": "Knochennadel beim Nähen von Kleidung", "netz": "Fischer mit Netz, Netz-Trockengestell am Ufer", "mahlstein": "Mahlstein am Lager und in den Häusern", "einbaum": "Einbaum am Ufer und auf dem Wasser", "vorratsgrube": "Abgedeckte Vorratsgruben am Lager – je mehr Vorrat, desto mehr", "sichel": "Sichel bei der Ernte", "schmuck": "Angesehene tragen Ketten aus Muscheln und Zähnen", "saatgut": "Kräftigere Ernte (nur in den Zahlen)", "huelsen": "Felder mit Linsen und Erbsen zwischen dem Korn", "schaf": "Schafe im Gehege", "rind": "Rinder im Gehege", "schwein": "Schweine im Gehege", "lehmziegel": "Lehmhäuser mit Flachdach, Ziegel trocknen im Werkhof", "steinbeil": "Geschliffenes Beil beim Holzen und Bauen", "backofen": "Backofen im Werkhof", "bier": "Große Krüge am Lager", "spindel": "Spindel beim Weben", "webstuhl": "Leinenkleidung", "milch": "Milchkrüge am Gehege", "bewaesserung": "Kanäle an den Feldern", "hakenpflug": "Pflug auf dem Feld", "ochsen": "Ochse zieht den Pflug", "brennofen": "Brennofen mit Rauch im Werkhof", "toepferscheibe": "Töpferscheibe im Werkhof", "kupfer_haemmern": "Kupferschmuck an Angesehenen", "kupfer_guss": "Kupferbeil und Kupferspeer", "esel": "Esel im Gehege, Händler mit Packesel", "segelboot": "Schilfboot mit Segel", "rad": "Scheibenräder im Werkhof", "wagen": "Karren am Vorratshaus, Händler mit Wagen", "dattel": "Dattelpalmen an den Feldern", "zaehlsteine": "Schale mit Zählsteinen im Vorratshaus", "siegel": "Gesiegelte Kisten im Vorratshaus", "masse": "Gerechterer Handel (nur in den Zahlen)", "kalender": "Steinkreis am Dorfrand", "zahlen": "Grundlage der Schrift (nur in den Zahlen)", "rationen": "Tontafel im Vorratshaus", "tempelbau": "Stufentempel", "schrift": "Tontafeln mit Zeichen im Vorratshaus", "schule": "Kinder lernen schneller (nur in den Zahlen)", "fernhandel": "Marktstand im Dorf, Händler unterwegs", "handwerker": "Schnellere Werkstattarbeit (nur in den Zahlen)", "tempelwirtschaft": "Priesterherrschaft wird möglich", "stadtplanung": "Stadtmauer aus Ziegeln", "gerichte": "Weniger Streit (nur in der Chronik)", "heer": "Kämpfer mit Kupferhelm und Schild", "koenigtum": "Krone auf dem Haupt des Herrschers", "schuldknechtschaft": "Unfreie im Dorf (Menschen-Ansicht)"};
+for (const k in TECH_SEE) if (TECH[k]) TECH[k].see = TECH_SEE[k];
+
+const TECH_HOW = {"nadel": "bohrt ein Loch in einen Knochensplitter und fädelt eine Sehne hindurch", "netz": "knüpft Schnüre zu einem Gitter und zieht damit einen ganzen Schwarm an Land", "mahlstein": "zerreibt Körner zwischen zwei Steinen zu Mehl", "einbaum": "höhlt einen Baumstamm mit Feuer und Stein aus und setzt sich hinein", "vorratsgrube": "gräbt eine Grube, legt sie mit Rinde aus und deckt die Vorräte zu", "sichel": "setzt Feuersteinklingen in ein gebogenes Holz und schneidet damit Gras im Bündel", "schmuck": "reiht Muscheln und Zähne auf eine Schnur und trägt sie um den Hals", "saatgut": "legt die dicksten Körner beiseite, statt sie zu essen", "huelsen": "sät Linsen zwischen das Korn", "schaf": "treibt ein Mufflon in den Pferch", "rind": "zähmt ein junges Auerochsenkalb", "schwein": "lockt ein Wildschwein mit Abfällen an, bis es bleibt", "lehmziegel": "presst Lehm mit Stroh in eine Holzform und lässt ihn in der Sonne trocknen", "steinbeil": "schleift einen Stein so lange, bis seine Schneide glänzt", "backofen": "formt eine Kuppel aus Lehm und backt darin Fladen", "bier": "vergisst einen Topf mit nassem Korn – und findet ein schäumendes Getränk", "spindel": "steckt einen Stein auf einen Stab und dreht damit Garn", "webstuhl": "spannt Fäden mit Steingewichten zwischen zwei Balken", "milch": "melkt eine Ziege und lässt die Milch säuern", "bewaesserung": "gräbt einen Graben vom Fluss zum Feld", "hakenpflug": "zieht einen gebogenen Ast durch die Erde", "ochsen": "spannt einen Ochsen vor den Pflug", "brennofen": "mauert um das Feuer eine Kammer aus Lehm", "toepferscheibe": "setzt eine Scheibe auf einen Zapfen und dreht sie beim Töpfern", "kupfer_haemmern": "hämmert einen grün schimmernden Stein zu einer Perle", "kupfer_guss": "sieht flüssiges Metall aus dem Ofen rinnen und gießt es in eine Form", "esel": "lädt einem Wildesel Säcke auf", "segelboot": "spannt ein Tuch auf ein Schilfboot und lässt sich vom Wind treiben", "rad": "nimmt die Scheibe von der Töpferachse und rollt sie über den Boden", "wagen": "baut zwei Räder unter einen Kasten und spannt einen Ochsen davor", "dattel": "pflanzt Dattelkerne an den Rand des Kanals", "zaehlsteine": "formt für jeden Krug eine kleine Tonmarke", "siegel": "schnitzt ein Zeichen in einen Stein und drückt es in Ton", "masse": "legt fest, wie viel ein Krug fasst und ein Stein wiegt", "kalender": "zählt die Monde zwischen zwei Sonnenwenden", "zahlen": "bündelt die Zählsteine in Sechzigern", "rationen": "teilt jedem genau zu, was ihm zusteht", "tempelbau": "errichtet den Göttern ein Haus auf einer Plattform", "schrift": "ritzt Zeichen in eine Tontafel, die jeder lesen kann, der sie gelernt hat", "schule": "versammelt Kinder um sich und lehrt sie die Zeichen", "fernhandel": "zieht mit Waren zu fernen Sippen", "handwerker": "arbeitet nur noch in der Werkstatt und tauscht seine Ware gegen Essen", "tempelwirtschaft": "lässt die Ernte im Tempel sammeln und verteilen", "stadtplanung": "zieht Gassen und eine Mauer um die Siedlung", "gerichte": "lässt Streit vor den Alten verhandeln", "heer": "stellt Kämpfer auf, die nur für den Krieg da sind", "koenigtum": "lässt sich als König ausrufen", "schuldknechtschaft": "verlangt Arbeit für eine Schuld, die nicht bezahlt wird"};
+for (const k in TECH_HOW) if (TECH[k]) TECH[k].how = TECH_HOW[k];
+
 // =====================================================================
 //  SIEDLUNGEN IM RASTER
 //  Jede Sippe legt ihr Lager auf dem Kachelraster an: ein Platz mit dem
@@ -6097,11 +6186,11 @@ function townOrigin(T) { if (!T.town || T.town.cx !== (T.cx | 0) || T.town.cy !=
 const lotXY = (O, i, j) => [O.cx - 2 + i * LOT, O.cy - 2 + j * LOT]; // linke obere Kachel
 // Was ist vom Platz aus trockenen Fußes erreichbar? (Parzellen nur dort, sonst stehen Häuser jenseits des Bachs)
 function townReach(T, O) {
-  if (O.reach && O.reachV === (W.hutVer || 0)) return O.reach;
+  if (O.reach && O.reachV === (W.hutVer || 0) + ':' + (T.townVer || 0)) return O.reach;
   const seen = new Set(), q = [O.cy * C.MW + O.cx]; seen.add(q[0]);
   while (q.length) { const i = q.pop(), x = i % C.MW, y = (i / C.MW) | 0;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (Math.abs(X - O.cx) > 40 || Math.abs(Y - O.cy) > 40 || X < 0 || Y < 0 || X >= C.MW || Y >= C.MH) continue; const j = Y * C.MW + X; if (seen.has(j) || W.t[j] < T_SHORE) continue; const h = houseAt(X, Y); if (h && !(X === h.lx + 2 && Y === h.ly + h.h - 1)) continue; seen.add(j); q.push(j); } }
-  O.reach = seen; O.reachV = W.hutVer || 0; return seen;
+  O.reach = seen; O.reachV = (W.hutVer || 0) + ':' + (T.townVer || 0); return seen;
 }
 function lotOK(T, O, i, j) {
   const [x0, y0] = lotXY(O, i, j);
@@ -6133,7 +6222,7 @@ function allocLot(T, kind, wl = 1, hl = 1) {
       for (const bu of bushesNear(P.cx, P.cy, 4)) if (bu.x >= x0 && bu.x < x0 + P.w && bu.y >= y0 && bu.y < y0 + P.h) { bu.gone = 1; bu.f = 0; bu.max = 0; }
       for (const id of T.members) { const m = NPC.get(id); if (m && m.spots.length) m.spots = m.spots.filter(s => !s.b.gone); }
       for (let y = y0; y < y0 + P.h; y++) for (let x = x0; x < x0 + P.w; x++) { const k = y * C.MW + x; if (W.t[k] === T_FOREST) { W.t[k] = T_GRASS; W.cut[k] = 'f'; if (HOOKS.onTile) HOOKS.onTile(x, y); } }
-      T.townVer = (T.townVer || 0) + 1; W.hutVer = (W.hutVer || 0) + 1;
+      T.townVer = (T.townVer || 0) + 1; if (!W.hutVer) W.hutVer = 1;
       return P;
     }
   }
@@ -6158,18 +6247,23 @@ function houseOK(e, x, y) {
   return false;
 }
 // Wo liegt welches Haus? (für Tür-Wege und Wärme)
-let HMAP = null, HMAPV = -1;
+let HMAP = null, HMAPV = -1, HLIST = [];
 function houseAt(x, y) {
-  if (HMAPV !== (W.hutVer || 0) || !HMAP) { HMAP = new Map(); HMAPV = W.hutVer || 0; for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts)) if (h.lx !== undefined) for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) HMAP.set(yy * C.MW + xx, h); }
-  return HMAP.get((y | 0) * C.MW + (x | 0));
+  if (HMAPV !== (W.hutVer || 0) || !HMAP || HMAP.length !== C.MW * C.MH) {
+    HMAPV = W.hutVer || 0; if (!HMAP || HMAP.length !== C.MW * C.MH) HMAP = new Int32Array(C.MW * C.MH); else HMAP.fill(0); HLIST = [null];
+    for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts)) if (h.lx !== undefined) { const id = HLIST.length; HLIST.push(h); for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) HMAP[yy * C.MW + xx] = id; }
+  }
+  x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return undefined;
+  const id = HMAP[y * C.MW + x]; return id ? HLIST[id] : undefined;
 }
 // ---------------------------------------------------------------- Laufen in der Siedlung
 // Häuser betritt und verlässt man nur durch die Tür, Palisade und Mauer nur durch die Tore.
 // Ist der gerade Weg verstellt, sucht A* einen Weg über das Kachelraster.
 let WMAP = null, WMAPV = '';
+let WMAPT = -1;
 function wallAt(x, y) {
-  const v = (W.hutVer || 0) + ':' + W.tribes.reduce((a, T) => a + (T.alive && T.town ? (T.pal || 0) + (T.bld?.wall || 0) * 100 + (T.townVer || 0) * 7 : 0), 0);
-  if (v !== WMAPV) { WMAPV = v; WMAP = new Set(); for (const T of W.tribes) { if (!T.alive || !T.town) continue; const isW = (T.bld?.wall || 0) > 0, prog = isW ? T.bld.wall / BUILD_NEED.wall : (T.pal || 0) / 24; if (prog <= 0) continue; const R = townRect(T), per = townPerimeter(R), n = Math.round(per.length * Math.min(1, prog)); for (let k = 0; k < n; k++) WMAP.add(per[k][1] * C.MW + per[k][0]); } }
+  if (WMAPT !== W.tick) { WMAPT = W.tick; const v = (W.hutVer || 0) + ':' + W.tribes.reduce((a, T) => a + (T.alive && T.town ? (T.pal || 0) + (T.bld?.wall || 0) * 100 + (T.townVer || 0) * 7 : 0), 0);
+  if (v !== WMAPV) { WMAPV = v; WMAP = new Set(); for (const T of W.tribes) { if (!T.alive || !T.town) continue; const isW = (T.bld?.wall || 0) > 0, prog = isW ? T.bld.wall / BUILD_NEED.wall : (T.pal || 0) / 24; if (prog <= 0) continue; const R = townRect(T), per = townPerimeter(R), n = Math.round(per.length * Math.min(1, prog)); for (let k = 0; k < n; k++) WMAP.add(per[k][1] * C.MW + per[k][0]); } } }
   return WMAP.has((y | 0) * C.MW + (x | 0));
 }
 // darf man von Kachel (ax,ay) nach (bx,by)?
@@ -6191,26 +6285,32 @@ function lineClear(e, tx, ty) {
     px = x; py = y; }
   return true;
 }
+const AS_MAX = 9000, AS_G = new Float32Array(AS_MAX), AS_FROM = new Int32Array(AS_MAX), AS_STAMP = new Int32Array(AS_MAX), AS_HK = new Float32Array(AS_MAX * 4), AS_HV = new Int32Array(AS_MAX * 4); let AS_GEN = 0;
 function aStar(e, tx, ty) {
   const sx = e.x | 0, sy = e.y | 0, gx = tx | 0, gy = ty | 0;
-  const x0 = Math.min(sx, gx) - 12, y0 = Math.min(sy, gy) - 12, w = Math.abs(sx - gx) + 25, h = Math.abs(sy - gy) + 25;
-  if (w * h > 9000) return null;
-  const idx = (x, y) => (y - y0) * w + (x - x0), g = new Float32Array(w * h).fill(1e9), from = new Int32Array(w * h).fill(-1), open = [[0, sx, sy]];
-  g[idx(sx, sy)] = 0; let it = 0;
-  while (open.length && it++ < 6000) {
-    let bi = 0; for (let i = 1; i < open.length; i++) if (open[i][0] < open[bi][0]) bi = i;
-    const [, x, y] = open[bi]; open[bi] = open[open.length - 1]; open.pop();
-    if (x === gx && y === gy) { const pts = []; let c = idx(x, y); while (c >= 0 && c !== idx(sx, sy)) { pts.push([(c % w) + x0 + 0.5, ((c / w) | 0) + y0 + 0.5]); c = from[c]; } return pts.reverse(); }
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < x0 || Y < y0 || X >= x0 + w || Y >= y0 + h) continue; if (!stepOK(e, x, y, X, Y)) continue;
-      const j = idx(X, Y), ng = g[idx(x, y)] + (W.path[Y * C.MW + X] ? 0.7 : 1); if (ng < g[j]) { g[j] = ng; from[j] = idx(x, y); open.push([ng + Math.abs(X - gx) + Math.abs(Y - gy), X, Y]); } }
+  const x0 = Math.min(sx, gx) - 8, y0 = Math.min(sy, gy) - 8, w = Math.abs(sx - gx) + 17, h = Math.abs(sy - gy) + 17, N = w * h;
+  if (N > AS_MAX) return null;
+  const gen = ++AS_GEN, g = AS_G, from = AS_FROM, st = AS_STAMP, hk = AS_HK, hv = AS_HV; let hn = 0;
+  const G = i => st[i] === gen ? g[i] : 1e9;
+  const push = (v, k) => { let i = hn++; while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; } hk[i] = k; hv[i] = v; };
+  const pop = () => { const v = hv[0], lk = hk[--hn], lv = hv[hn]; let i = 0; while (true) { let c = 2 * i + 1; if (c >= hn) break; if (c + 1 < hn && hk[c + 1] < hk[c]) c++; if (hk[c] >= lk) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; } hk[i] = lk; hv[i] = lv; return v; };
+  const s = (sy - y0) * w + (sx - x0), goal = (gy - y0) * w + (gx - x0); st[s] = gen; g[s] = 0; from[s] = -1; push(s, 0); let it = 0;
+  while (hn > 0 && it++ < 2500) {
+    const c = pop(); if (c === goal) { const pts = []; let q = c; while (q >= 0 && q !== s) { pts.push([(q % w) + x0 + 0.5, ((q / w) | 0) + y0 + 0.5]); q = from[q]; } return pts.reverse(); }
+    const x = (c % w) + x0, y = ((c / w) | 0) + y0, gc = g[c];
+    for (let d = 0; d < 4; d++) { const X = x + (d === 0 ? 1 : d === 1 ? -1 : 0), Y = y + (d === 2 ? 1 : d === 3 ? -1 : 0); if (X < x0 || Y < y0 || X >= x0 + w || Y >= y0 + h) continue;
+      const j = (Y - y0) * w + (X - x0), ng = gc + (W.path[Y * C.MW + X] ? 0.7 : 1); if (ng >= G(j) || hn >= AS_MAX * 4 - 1 || !stepOK(e, x, y, X, Y)) continue; st[j] = gen; g[j] = ng; from[j] = c; push(j, ng + 1.2 * (Math.abs(X - gx) + Math.abs(Y - gy))); }
   }
   return null;
 }
 function navMove(e, tx, ty, speed) {
   if (e.ghost > 0) { e.ghost--; return moveStep(e, tx, ty, speed); }
   let N = e.nav;
-  if (!N || Math.abs(N.tx - tx) > 0.01 || Math.abs(N.ty - ty) > 0.01 || N.v !== WMAPV + '|' + (W.hutVer || 0)) {
-    if (lineClear(e, tx, ty)) { e.nav = null; return moveStep(e, tx, ty, speed); }
+  if (N && N.clear && N.tx === tx && N.ty === ty && W.tick < N.until) return moveStep(e, tx, ty, speed);
+  if (N && !N.clear && (Math.abs(N.tx - tx) > 0.01 || Math.abs(N.ty - ty) > 0.01) && Math.abs(N.tx - tx) + Math.abs(N.ty - ty) < 1.5 && houseAt(tx, ty) === houseAt(N.tx, N.ty)) { N.tx = tx; N.ty = ty; } // Ziel hat sich nur ein wenig bewegt
+  if (!N || N.clear || Math.abs(N.tx - tx) > 0.01 || Math.abs(N.ty - ty) > 0.01) {
+    if (lineClear(e, tx, ty)) { e.nav = { clear: 1, tx, ty, until: W.tick + 10 }; return moveStep(e, tx, ty, speed); }
+    if (e.act && (e.act.type === 'social' || e.act.type === 'play')) return moveStep(e, tx, ty, speed); // Plaudern: kein Umweg-Planen
     const pts = aStar(e, tx, ty);
     if (!pts) { e.ghost = 40; e.nav = null; return moveStep(e, tx, ty, speed); }
     N = e.nav = { tx, ty, v: WMAPV + '|' + (W.hutVer || 0), pts, i: 0, f: 0 };
@@ -6473,7 +6573,7 @@ function spriteFrame(n, moving, t) {
 //  Pixel-Werkzeuge (Griff = Punkt g, an dem die Hand hält)
 // =====================================================================
 // o Umriss · w Holz · W Holz dunkel · r Stein · R Stein dunkel · x Sehne/Schnur · g grün · G grün dunkel · p Farbe · l hell · b Bronze · i Eisen
-const TOOL_PAL = { c: '#d0803e', C: '#9a5426', o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', r: '#a19d96', R: '#6e6a64', x: '#e8e0c8', g: '#5fae45', G: '#3d7a2c', p: '#c0392b', l: '#efe6cc', f: '#e0b03c', b: '#c8893a', i: '#c3c8d0' };
+const TOOL_PAL = { l: '#efe6cc', c: '#d0803e', C: '#9a5426', o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', r: '#a19d96', R: '#6e6a64', x: '#e8e0c8', g: '#5fae45', G: '#3d7a2c', p: '#c0392b', l: '#efe6cc', f: '#e0b03c', b: '#c8893a', i: '#c3c8d0' };
 const TOOLS = {
   keule:     { g: [1, 7], px: ['.....oo.', '....oWWo', '...oWwWo', '...owWo.', '..owo...', '.owo....', 'owo.....', 'oo......'] },
   faustkeil: { g: [1, 5], px: ['...oo.', '..orro', '.orrRo', 'orrRo.', 'oRRo..', 'oo....'] },
@@ -6507,10 +6607,10 @@ function heldTool(n, a) {
   if (!a) return null;
   const t = a.type;
   if (t === 'hunt' || t === 'raid' || t === 'defend' || t === 'watch') return n.tools.bogen > 0 ? 'bogen' : n.tools.speer > 0 ? (TK(tribeOf(n), 'kupfer_guss') ? 'kspeer' : 'speer') : (ageY(n) >= 13 ? 'keule' : null);
-  if (t === 'fish') return n.tools.speer > 0 ? 'speer' : null;
+  if (t === 'fish') return TK(tribeOf(n), 'netz') ? 'netz' : n.tools.speer > 0 ? 'speer' : null;
   const Tn = typeof tribeOf === 'function' ? tribeOf(n) : null;
   if (t === 'wood' || t === 'build' || t === 'construct') return TK(Tn, 'kupfer_guss') ? 'kupferaxt' : TK(Tn, 'steinbeil') ? 'beil' : n.tools.faustkeil > 0 ? 'faustkeil' : null;
-  if (t === 'craft') return a.what === 'tuch' && TK(Tn, 'spindel') ? 'spindel' : n.tools.faustkeil > 0 ? 'faustkeil' : null;
+  if (t === 'craft') return a.what === 'kleidung' && TK(Tn, 'nadel') ? 'nadel' : a.what === 'tuch' && TK(Tn, 'spindel') ? 'spindel' : n.tools.faustkeil > 0 ? 'faustkeil' : null;
   if (t === 'farm') return a.job === 'harvest' && TK(Tn, 'sichel') ? 'sichel' : a.job !== 'harvest' && TK(Tn, 'hakenpflug') ? 'pflug' : 'hacke';
   if (t === 'gather') return n.tools.korb > 0 ? 'korb' : null;
   if (t === 'paint') return 'pinsel';
@@ -6565,6 +6665,19 @@ const FURN_PAL = { o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', x: '#e8dcc0', c: '#
 
 const WHEEL_PX = ['..oooo..', '.owwwwo.', 'owwWWwwo', 'owWooWwo', 'owWooWwo', 'owwWWwwo', '.owwwwo.', '..oooo..'];
 
+// Lager-Kram: was erforschtes Wissen sichtbar macht
+const PIT_PX = ['..rrrr..', '.rwwWwr.', 'rwWwwWwr', 'rwwWwwwr', '.rwwwWr.', '..rrrr..'];
+const RACK_PX = ['o............o', 'oooooooooooooo', 'o.g.g.g.g.g..o', 'o.G.G.G.G.G..o', 'o.g...g...g..o', 'o............o', 'o............o', 'o............o'];
+const FISHRACK_PX = ['o............o', 'oooooooooooooo', 'o.f.f.f.f.f..o', 'o.F.F.F.F.F..o', 'o.f.f.f.f.f..o', 'o............o', 'o............o', 'o............o'];
+const NETRACK_PX = ['o............o', 'oooooooooooooo', 'oxx.x.x.x.x.xo', 'o.x.x.x.x.x.xo', 'oxxxxxxxxxxxxo', 'o.x.x.x.x.x.xo', 'oxx.x.x.x.x.xo', 'o............o'];
+const JAR_PX = ['.oooo.', '.obbo.', 'obbbbo', 'obBbbo', 'obbbbo', 'obbbbo', '.obbo.', '..oo..'];
+const PWHEEL_PX = ['.oooooo.', 'owwwwwwo', '.oWWWWo.', '...oo...', '...oo...', '..oooo..'];
+const TABLET_PX = ['oooooo', 'olllll', 'oykyky', 'olllll', 'okykyo', 'olllll', 'oooooo'];
+const STALL_PX = ['cCcCcCcCcCcCcC', 'CcCcCcCcCcCcCc', 'oooooooooooooo', 'o.............o', 'o.ybb.yy.bbg.o', 'owwwwwwwwwwwwo', 'oWWWWWWWWWWWWo', 'o............o'];
+const CAMP_PAL = { o: '#3a2a1c', r: '#7e7a74', w: '#9a6a3c', W: '#6a4424', g: '#6fae45', G: '#3d7a2c', f: '#c3c8d0', F: '#8a909a', x: '#c8b48a', b: '#a0583a', B: '#c47a50', l: '#c8a070', k: '#7a5030', y: '#e0b03c', c: '#b5482e', C: '#e8dcc0' };
+TOOLS.netz = { g: [2, 4], px: ['.o.o.o.', 'oxoxoxo', '.oxoxo.', '..oxo..', '...o...', '...w...', '...w...'] };
+TOOLS.nadel = { g: [1, 3], px: ['..x', '.l.', 'l..', 'x..'] };
+
 </script>
 <script>
 // =====================================================================
@@ -6581,7 +6694,7 @@ const SPEEDS = [0, 1, 3, 10, 30, 100, 500];
 const TPS = 3; // Ticks pro Sekunde bei 1× (ein Tag ≈ 16 Sekunden)
 let terrain = null, miniTerrain = null, nightC = null, nctx = null;
 
-const ACT_TXT = {
+const ACT_TXT = { fetch: 'holt etwas aus dem Lager',
   sleep: 'schläft', rest: 'ruht sich aus', warm: 'wärmt sich auf', eat: 'isst', deliver: 'bringt Vorräte ins Lager', play: 'spielt',
   gather: 'sammelt Beeren und Wurzeln', hunt: 'ist auf der Jagd', fish: 'fischt', wood: 'holt Feuerholz', social: 'unterhält sich',
   defend: 'verteidigt das Lager', farm: 'arbeitet auf dem Feld', herd: 'versucht, eine Wildziege einzufangen', trap: 'legt eine Fischreuse aus', construct: 'baut', visit: 'besucht eine befreundete Sippe',
@@ -6879,7 +6992,9 @@ function draw(t) {
   if (Z > 0.3) for (const k in W.fields) {
     const x = k % C.MW, y = (k / C.MW) | 0; if (!inView(x, y)) continue;
     const f = W.fields[k], px = x * TS, py = y * TS;
-    tex(ctx, f.st >= 2 ? (f.st === 3 ? 'ripe' : 'grow') : 'farm', px, py);
+    const FTr = TRIBE.get(f.tr), legume = FTr && TK(FTr, 'huelsen') && hash(x + 11, y + 5) < 0.35;
+    if (legume && f.st >= 2) { tex(ctx, 'farm', px, py); for (let yy = 2; yy < TS; yy += 5) for (let xx = 1; xx < TS; xx += 4) { ctx.fillStyle = '#3d7a2c'; ctx.fillRect(px + xx, py + yy, 3, 3); ctx.fillStyle = f.st === 3 ? '#b8c060' : '#6fae45'; ctx.fillRect(px + xx + 1, py + yy, 1, 2); } }
+    else tex(ctx, f.st >= 2 ? (f.st === 3 ? 'ripe' : 'grow') : 'farm', px, py);
     { const FT_ = TRIBE.get(f.tr); if (FT_ && TK(FT_, 'bewaesserung') && (x + y) % 2 === 0) { ctx.fillStyle = '#3a6ea8'; ctx.fillRect(px, py + 14, TS, 2); ctx.fillStyle = '#7ab4e0'; ctx.fillRect(px, py + 14, TS, 1); } if (FT_ && TK(FT_, 'dattel') && hash(x, y) < 0.08) { ctx.fillStyle = '#6a4424'; ctx.fillRect(px + 7, py - 6, 2, 12); ctx.fillStyle = '#4f8a3a'; for (let i = 0; i < 5; i++) ctx.fillRect(px + 8 + Math.cos(i * 1.25) * 5 - 2, py - 7 + Math.sin(i * 1.25) * 2, 5, 2); } } if (f.st === 1) { ctx.fillStyle = '#6fb04a'; for (let yy = 3; yy < TS; yy += 4) for (let xx = 2; xx < TS; xx += 4) ctx.fillRect(px + xx, py + yy, 2, 2); }
   }
   // Felsbilder
@@ -6888,7 +7003,8 @@ function draw(t) {
   for (const T of W.tribes) {
     if (!T.alive || !inView(T.cx, T.cy, 10)) continue;
     const px = T.cx * TS, py = T.cy * TS;
-    if (T.town) drawTownGround(T); else { ctx.save(); ctx.globalAlpha = 0.85; ctx.fillStyle = patt(ctx, 'dirtFloor'); ctx.beginPath(); ctx.ellipse(px, py, 40, 32, 0, 0, 7); ctx.fill(); ctx.restore(); }
+    if (T.town) drawTownGround(T);
+    drawCampProps(T, px, py);
     // Vorräte
     const piles = T.storehouse ? 0 : Math.min(8, Math.ceil(T.store.food / 40));
     for (let i = 0; i < piles; i++) { const ax = px + 20 + (i % 4) * 7, ay = py - 14 + Math.floor(i / 4) * 7; ctx.fillStyle = '#7a5a34'; ctx.fillRect(ax, ay, 6, 6); ctx.fillStyle = '#a3311f'; ctx.fillRect(ax + 1, ay + 1, 4, 2); }
@@ -7024,15 +7140,53 @@ function drawWall(T, k) {
       if (j % 2 === 0) { ctx.fillStyle = '#d4b07a'; ctx.fillRect(x - 4, y - 11, 3, 2); } }
   }
 }
+// ---------------------------------------------------------------- Was das Wissen einer Sippe im Lager sichtbar macht
+function campShore(T) {
+  if (T._shore && T._shore.c === T.cx + ',' + T.cy) return T._shore;
+  let best = null, bd = 1e9; for (let dy = -14; dy <= 14; dy++) for (let dx = -14; dx <= 14; dx++) { const x = (T.cx | 0) + dx, y = (T.cy | 0) + dy, t = tileAt(x, y); if (t < T_SHORE || houseAt(x, y)) continue; if (![[1, 0], [-1, 0], [0, 1], [0, -1]].some(([a, b]) => tileAt(x + a, y + b) <= T_SHALLOW)) continue; const d = dx * dx + dy * dy; if (d < bd) { bd = d; best = [x, y]; } }
+  T._shore = best ? Object.assign(best, { c: T.cx + ',' + T.cy }) : { c: T.cx + ',' + T.cy, none: 1 }; return T._shore;
+}
+function drawItems(T, X, Y) { // X,Y = linke obere Ecke der Ablage (Weltpixel)
+  const I = T.items || {}, sp = Math.min(6, I.speer || 0), bo = Math.min(4, I.bogen || 0), fk = Math.min(4, I.faustkeil || 0), ko = Math.min(3, I.korb || 0), kl = Math.min(4, (I.kleidung || 0) + (I.tuch || 0));
+  if (!(sp + bo + fk + ko + kl)) return;
+  ctx.fillStyle = '#5a3d22'; ctx.fillRect(X, Y + 10, 26, 2); ctx.fillRect(X, Y - 2, 2, 14); ctx.fillRect(X + 24, Y - 2, 2, 14); // Gestell
+  for (let i = 0; i < sp; i++) { const c = toolCanvas(TK(T, 'kupfer_guss') ? 'kspeer' : 'speer'); ctx.save(); ctx.translate(X + 3 + i * 3, Y + 10); ctx.rotate(-0.75); ctx.drawImage(c, -2, -c.height + 2); ctx.restore(); }
+  for (let i = 0; i < bo; i++) ctx.drawImage(toolCanvas('bogen'), X + 15 + i * 3, Y - 1);
+  for (let i = 0; i < fk; i++) ctx.drawImage(toolCanvas('faustkeil'), X + 1 + i * 6, Y + 13);
+  for (let i = 0; i < ko; i++) ctx.drawImage(toolCanvas('korb'), X + 26 + i * 8, Y + 5);
+  for (let i = 0; i < kl; i++) { ctx.fillStyle = I.tuch ? '#d8cfb0' : '#b8956a'; ctx.fillRect(X + 27, Y - 3 - i * 3, 9, 3); ctx.fillStyle = I.tuch ? '#b5aa86' : '#8a6a44'; ctx.fillRect(X + 27, Y - 1 - i * 3, 9, 1); }
+}
+function drawCampProps(T, px, py) {
+  if (!(T.storehouse && T.storehouse.lx !== undefined)) drawItems(T, px + 4, py + 12);
+  const P = (k, rows, x, y, pal = CAMP_PAL) => { const c = pxCanvas(k, rows, pal); ctx.drawImage(c, Math.round(x - c.width / 2), Math.round(y - c.height / 2)); };
+  // Vorratsgruben (bis ein Vorratshaus steht): je mehr Vorrat, desto mehr Gruben
+  if (TK(T, 'vorratsgrube') && !T.storehouse) { const n = Math.min(6, 1 + Math.floor(T.store.food / 80)); for (let i = 0; i < n; i++) P('pit', PIT_PX, px + 10 + (i % 3) * 9, py - 24 + Math.floor(i / 3) * 8); }
+  // Kochen: Bratspieß über dem Feuer
+  if (TK(T, 'kochen') && T.fire.lit) { ctx.strokeStyle = '#5a3d22'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(px - 8, py + 4); ctx.lineTo(px - 7, py - 7); ctx.moveTo(px + 8, py + 4); ctx.lineTo(px + 7, py - 7); ctx.moveTo(px - 9, py - 6); ctx.lineTo(px + 9, py - 6); ctx.stroke(); if (T.store.food > 5) { ctx.fillStyle = '#8a3a20'; ctx.fillRect(px - 3, py - 8, 6, 4); ctx.fillStyle = '#b8603a'; ctx.fillRect(px - 2, py - 8, 4, 1); } }
+  // Heilkräuter trocknen am Gestell, Körbe aus Flechtwerk, Mahlstein, Krüge mit Bier und Milch
+  if (TK(T, 'heilkraeuter')) P('rack', RACK_PX, px - 24, py - 20);
+  if (TK(T, 'flechten')) { const c = toolCanvas('korb'); ctx.drawImage(c, px - 30, py + 8); ctx.drawImage(c, px - 24, py + 11); }
+  if (TK(T, 'mahlstein') && !T.huts.length) P('quern', QUERN_PX, px + 22, py + 2, FURN_PAL);
+  if (TK(T, 'bier')) for (let i = 0; i < 3; i++) P('jar', JAR_PX, px - 14 + i * 7, py + 22);
+  if (TK(T, 'milch') && T.penR) for (let i = 0; i < 2; i++) P('jarm', JAR_PX, (T.penR.x0 + 0.6) * TS + i * 7, (T.penR.y0 + T.penR.h - 0.8) * TS, { ...CAMP_PAL, b: '#e8e2d0', B: '#ffffff' });
+  // Kalender: ein Kreis aus Steinen, der die Sonnenwenden zeigt
+  if (TK(T, 'kalender')) { const RR = T.town && townRect(T), cx = RR ? (RR.x0 - 1.5) * TS : px - 44, cy = RR ? (RR.y0 - 1.5) * TS : py - 40; for (let i = 0; i < 9; i++) { const a = i / 9 * 6.283, x = cx + Math.cos(a) * 10, y = cy + Math.sin(a) * 6; ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(x - 1, y + 2, 4, 2); ctx.fillStyle = '#8a8680'; ctx.fillRect(x - 1, y - 5, 3, 7); ctx.fillStyle = '#b0aca4'; ctx.fillRect(x - 1, y - 5, 3, 1); } }
+  // Fernhandel: ein Marktstand am Platz
+  if (TK(T, 'fernhandel')) P('stall', STALL_PX, px, py - 26);
+  // am Ufer: Fischgestell, Netze, Boote
+  const S = campShore(T);
+  if (!S.none && (TK(T, 'fischen') || TK(T, 'netz') || TK(T, 'einbaum'))) {
+    const sx = S[0] * TS + 8, sy = S[1] * TS + 8;
+    if (TK(T, 'netz')) P('netrack', NETRACK_PX, sx - 10, sy - 4); else if (TK(T, 'fischen')) P('fishrack', FISHRACK_PX, sx - 10, sy - 4);
+    if (TK(T, 'einbaum')) { const b = pxCanvas(TK(T, 'segelboot') ? 'reed' : 'dug', TK(T, 'segelboot') ? REED_PX : DUGOUT_PX, BOAT_PAL); ctx.drawImage(b, sx + 2, sy + 2); }
+  }
+}
 // ---------------------------------------------------------------- Siedlung im Raster (JRPG-Draufsicht)
 function drawTownGround(T) {
   const O = T.town, R = townRect(T);
-  // gestampfte Erde in der Siedlung, Platz in der Mitte
-  ctx.save(); ctx.globalAlpha = 0.45; ctx.fillStyle = patt(ctx, 'dirtFloor'); ctx.fillRect((R.x0 + 1) * TS, (R.y0 + 1) * TS, (R.x1 - R.x0 - 2) * TS, (R.y1 - R.y0 - 2) * TS); ctx.restore();
-  const [x0, y0] = lotXY(O, 0, 0); ctx.fillStyle = patt(ctx, 'dirtFloor'); ctx.fillRect(x0 * TS - 8, y0 * TS - 8, LOTW * TS + 16, LOTW * TS + 16);
-  ctx.fillStyle = 'rgba(70,50,30,.25)'; ctx.fillRect(x0 * TS - 8, y0 * TS - 8, LOTW * TS + 16, 2);
   // Werkhof
   for (const k in O.lots) { const P = O.lots[k]; if (P.kind === 'werk' && k === P.i + ',' + P.j) { ctx.fillStyle = patt(ctx, 'dirtFloor'); ctx.fillRect(P.x0 * TS, P.y0 * TS, P.w * TS, P.h * TS); ctx.strokeStyle = '#6b4a2b'; ctx.lineWidth = 1; ctx.strokeRect(P.x0 * TS + 0.5, P.y0 * TS + 0.5, P.w * TS - 1, P.h * TS - 1); }
+    if (P.kind === 'werk' && k === P.i + ',' + P.j) { if (TK(T, 'toepferscheibe')) { const c = pxCanvas('pwheel', PWHEEL_PX, FURN_PAL); ctx.drawImage(c, P.x0 * TS + 26, P.y0 * TS + 10); } if (TK(T, 'lehmziegel')) for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) { ctx.fillStyle = '#b8925c'; ctx.fillRect(P.x0 * TS + 6 + i * 9, P.y0 * TS + 40 + r * 7, 7, 4); ctx.fillStyle = '#d4b07a'; ctx.fillRect(P.x0 * TS + 6 + i * 9, P.y0 * TS + 40 + r * 7, 7, 1); } }
     if (P.kind === 'werk' && k === P.i + ',' + P.j && TK(T, 'rad')) { const wc = pxCanvas('wheel', WHEEL_PX, FURN_PAL); ctx.drawImage(wc, P.x0 * TS + 26, (P.y0 + P.h) * TS - 14); ctx.drawImage(wc, P.x0 * TS + 30, (P.y0 + P.h) * TS - 12); }
     if (P.kind === 'store' && k === P.i + ',' + P.j && TK(T, 'wagen')) { const c = pxCanvas('cart', CART_PX, { o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', r: '#8a6a44', R: '#4a3424' }); ctx.drawImage(c, (P.x0 + P.w) * TS + 1, (P.y0 + 2) * TS); }
     if (P.kind === 'bau' && k === P.i + ',' + P.j && !T.huts.some(h => h.lot === k)) { ctx.strokeStyle = 'rgba(120,90,50,.8)'; ctx.setLineDash([3, 3]); ctx.strokeRect(P.x0 * TS + 2, P.y0 * TS + 2, P.w * TS - 4, P.h * TS - 4); ctx.setLineDash([]); for (let i = 0; i < 3; i++) tex(ctx, 'logEnd', P.x0 * TS + 10 + i * 7, P.y0 * TS + 40, 6, 6); } }
@@ -7082,6 +7236,10 @@ function drawStoreLot(T) {
   ctx.fillStyle = patt(ctx, 'plank'); ctx.fillRect(X, Y, Wd, Hd);
   const n = Math.min(16, Math.ceil(T.store.food / 50));
   for (let i = 0; i < n; i++) tex(ctx, i % 3 === 2 ? 'crate2' : 'crate', X + 6 + (i % 4) * 14, Y + 12 + Math.floor(i / 4) * 12, 12, 12);
+  drawItems(T, X + 5, Y + Hd - 30);
+  if (TK(T, 'zaehlsteine')) { ctx.fillStyle = '#8a5a34'; ctx.beginPath(); ctx.arc(X + Wd - 9, Y + Hd - 10, 4, 0, 7); ctx.fill(); ctx.fillStyle = '#c8a070'; for (let i = 0; i < 5; i++) ctx.fillRect(X + Wd - 12 + (i % 3) * 2, Y + Hd - 12 + Math.floor(i / 3) * 2, 1, 1); }
+  if (TK(T, 'schrift') || TK(T, 'rationen')) { const c = pxCanvas('tablet', TABLET_PX, CAMP_PAL); ctx.drawImage(c, X + 6, Y + Hd - 12); if (TK(T, 'schrift')) ctx.drawImage(c, X + 14, Y + Hd - 12); }
+  if (TK(T, 'siegel')) { ctx.fillStyle = '#b5482e'; ctx.fillRect(X + 7, Y + 13, 2, 2); ctx.fillRect(X + 21, Y + 13, 2, 2); }
   ctx.fillStyle = patt(ctx, 'barkDark'); ctx.fillRect(X, Y, Wd, 8); ctx.fillRect(X, Y, 3, Hd); ctx.fillRect(X + Wd - 3, Y, 3, Hd); ctx.fillRect(X, Y + Hd - 3, 2 * TS, 3); ctx.fillRect(X + 3 * TS, Y + Hd - 3, Wd - 3 * TS, 3);
   ctx.fillStyle = T.col; ctx.fillRect(X + 2, Y - 3, 8, 3);
 }
@@ -7226,8 +7384,11 @@ function drawNpc(n, px, py, selected, detail) {
   if (n.sick > 0) { ctx.fillStyle = 'rgba(120,180,80,.35)'; ctx.fillRect(-4, -12, 8, 6); }
   // Oberhaupt: Federschmuck
   const top = child ? -9 : -13;
+  if (!n.copper && !child && T && TK(T, 'schmuck') && n.prestige > 22) { const ny = top + 7; ctx.fillStyle = '#efe6cc'; ctx.fillRect(-3, ny, 1, 1); ctx.fillRect(2, ny, 1, 1); ctx.fillStyle = '#b5482e'; ctx.fillRect(-1, ny + 1, 2, 1); }
+  if (T && a && (a.type === 'raid' || a.type === 'defend') && TK(T, 'heer') && !child) { ctx.fillStyle = '#c8783a'; ctx.fillRect(-4, top - 1, 8, 3); ctx.fillStyle = '#e8a060'; ctx.fillRect(-3, top - 1, 6, 1); ctx.fillStyle = '#8a6440'; ctx.beginPath(); ctx.arc(n.face === 'side' && n.flip ? 5 : -5, top + 9, 3.2, 0, 7); ctx.fill(); ctx.fillStyle = '#c8783a'; ctx.fillRect((n.face === 'side' && n.flip ? 5 : -5) - 1, top + 8, 2, 2); }
   if (n.copper && !child) { const ny = top + 7; ctx.fillStyle = '#d0803e'; ctx.fillRect(-3, ny, 1, 1); ctx.fillRect(-1, ny + 1, 2, 1); ctx.fillRect(2, ny, 1, 1); ctx.fillStyle = '#f0b070'; ctx.fillRect(0, ny + 1, 1, 1); }
-  if (T && T.leader === n.id) { ctx.fillStyle = '#e0b03c'; ctx.fillRect(-1, top - 3, 2, 3); ctx.fillStyle = '#b5482e'; ctx.fillRect(1, top - 4, 1, 3); }
+  if (T && T.leader === n.id && T.gov === 'koenig') { ctx.fillStyle = '#e0b03c'; ctx.fillRect(-3, top - 2, 6, 2); ctx.fillRect(-3, top - 4, 1, 2); ctx.fillRect(0, top - 4, 1, 2); ctx.fillRect(2, top - 4, 1, 2); ctx.fillStyle = '#b5482e'; ctx.fillRect(-1, top - 2, 1, 1); }
+  else if (T && T.leader === n.id) { ctx.fillStyle = '#e0b03c'; ctx.fillRect(-1, top - 3, 2, 3); ctx.fillStyle = '#b5482e'; ctx.fillRect(1, top - 4, 1, 3); }
   // Tragen
   const carry = n.inv.food + n.inv.meat;
   if (carry > 0 && detail) { const bx = n.face === 'up' ? 0 : -dir * 4, by = n.face === 'up' ? -6 : -4; ctx.fillStyle = n.tools.korb > 0 ? '#b8935a' : '#7a5a34'; ctx.fillRect(bx - 2.5, by, 5, 4); if (n.inv.meat) { ctx.fillStyle = '#a3311f'; ctx.fillRect(bx - 1.5, by, 3, 2); } else { ctx.fillStyle = '#c23b4a'; ctx.fillRect(bx - 1.5, by, 1, 1); ctx.fillRect(bx + 0.5, by + 1, 1, 1); } }
@@ -7414,7 +7575,8 @@ function nameLink(id) { const n = NPC.get(id); if (n) return `<span class="link"
 function actText(n) {
   const a = n.act; if (!a) return 'überlegt, was zu tun ist';
   let t = ACT_TXT[a.type] || a.type;
-  if (a.type === 'craft' && a.what) t = (a.stage === 1 ? 'besorgt Material für ' : 'fertigt ') + (CRAFT_TXT[a.what] || a.what);
+  if (a.type === 'craft' && a.what) t = (a.stage === 1 ? 'besorgt Material für ' : 'fertigt ') + (CRAFT_TXT[a.what] || a.what) + (a.forStore ? ' für das Lager' : '');
+  if (a.type === 'fetch' && a.what) t = 'holt ' + (ITEM_NAME[a.what] || a.what) + ' aus dem Lager';
   if (a.type === 'social' && a.with) { const m = NPC.get(a.with); if (m) t = 'unterhält sich mit ' + m.name; }
   if (a.type === 'sleep' && a.stage === 0) t = 'geht schlafen';
   if (a.type === 'farm') t = { new: 'bricht ein neues Feld auf', sow: 'sät auf dem Feld', tend: 'jätet und pflegt das Feld', harvest: 'erntet das Feld' }[a.job] || t;
@@ -7507,7 +7669,7 @@ function renderInspector(full) {
       <div class="sec"><div class="t">${settlementName(T)}</div>${T.bld ? `<div class="small">Bauten: ${Object.entries(T.bld).map(([k, v]) => ({ oven: 'Backofen', kiln: 'Brennofen', temple: 'Tempel', wall: 'Stadtmauer' }[k] + (v < BUILD_NEED[k] ? ` (im Bau, ${Math.round(v / BUILD_NEED[k] * 100)} %)` : ''))).join(' · ')}</div>` : ''}
         <div>Oberhaupt: ${L ? nameLink(L.id) : '–'}</div>
         <div>Feuer: ${T.fire.lit ? '🔥 brennt' : '<b style="color:#d9644a">erloschen</b>'} · Vorräte: ${Math.round(T.store.food)} · Hütten: ${T.huts.filter(h => !h.stone).length}${T.huts.some(h => h.stone) ? ' · Steinhäuser: ' + T.huts.filter(h => h.stone).length : ''}${T.cleared ? ' · gerodet: ' + T.cleared + ' Felder' : ''}${T.pots ? ' · Töpfe: ' + T.pots : ''}</div>
-        <div>${tribeFields(T).length ? 'Felder: ' + tribeFields(T).length + ' · ' : ''}${(() => { const h = {}; for (const a of W.animals) if (a.tribe === T.id && HERD_K[a.k]) h[a.k] = (h[a.k] || 0) + 1; const N = { goat: 'Ziegen', sheep: 'Schafe', cattle: 'Rinder', pig: 'Schweine', donkey: 'Esel' }; return Object.entries(h).map(([k, v]) => N[k] + ': ' + v).join(' · ') + (Object.keys(h).length ? ' · ' : ''); })()}${(T.traps || []).length ? 'Reusen: ' + T.traps.length + ' · ' : ''}${T.storehouse ? 'Vorratshaus · ' : ''}${T.pal ? 'Palisade: ' + Math.round(T.pal / 24 * 100) + ' %' : ''}</div>
+        <div>${tribeFields(T).length ? 'Felder: ' + tribeFields(T).length + ' · ' : ''}${(() => { const h = {}; for (const a of W.animals) if (a.tribe === T.id && HERD_K[a.k]) h[a.k] = (h[a.k] || 0) + 1; const N = { goat: 'Ziegen', sheep: 'Schafe', cattle: 'Rinder', pig: 'Schweine', donkey: 'Esel' }; return Object.entries(h).map(([k, v]) => N[k] + ': ' + v).join(' · ') + (Object.keys(h).length ? ' · ' : ''); })()}${(T.traps || []).length ? 'Reusen: ' + T.traps.length + ' · ' : ''}${T.storehouse ? 'Vorratshaus · ' : ''}${(() => { const I = T.items || {}, N = { speer: 'Speere', bogen: 'Bögen', faustkeil: 'Steinwerkzeuge', korb: 'Körbe', kleidung: 'Fellkleider', tuch: 'Stoffkleider' }; const l = Object.entries(I).filter(([, v]) => v > 0).map(([k, v]) => v + ' ' + N[k]); return l.length ? 'Im Lager: ' + l.join(', ') + ' · ' : ''; })()}${T.pal ? 'Palisade: ' + Math.round(T.pal / 24 * 100) + ' %' : ''}</div>
         <div class="small">Ehe: ${(T.poly || 0) >= 0.5 ? 'Vielehe – angesehene Männer haben mehrere Frauen' : 'Einehe'}</div>
         <div class="small">Wintervorrat-Ziel: ${T.winterTarget} pro Kopf${T.winterTarget > 14 ? ' (aus Hungerwintern gelernt)' : ''}</div></div>
       ${T.cv ? `<div class="sec"><div class="t">Herrschaft</div><div><b>${esc(govOf(T).name)}</b>${L ? ` – ${esc(leaderTitle(T, L))}: ${nameLink(L.id)}` : ''}</div><div class="small">${esc(govOf(T).desc || '')}</div><div class="small">seit ${dateStr(T.govSince || T.founded)}</div></div>
@@ -7738,6 +7900,7 @@ function refreshTree() {
   const link = x => `<span class="tl ${S[x].st}" data-go="${x}">${TECH[x].icon} ${TECH[x].name}</span>`;
   td.innerHTML = `<h2>${T_.icon} ${T_.name}</h2><div class="small" style="margin-bottom:6px">${TCAT[T_.cat || 'handwerk']}</div><div>${esc(T_.desc)}</div>
     ${T_.eff ? `<div class="sec"><div class="t">Wirkung</div>${esc(T_.eff)}</div>` : ''}
+    ${T_.see ? `<div class="sec"><div class="t">Im Spiel zu sehen</div>${esc(T_.see)}</div>` : ''}
     <div class="sec"><div class="t">Braucht</div>${T_.req.length ? T_.req.map(link).join(' ') : '<span class="small">kein Vorwissen</span>'}${T_.condTxt ? `<div class="small" style="margin-top:4px">Lage: ${esc(T_.condTxt)}</div>` : ''}</div>
     <div class="sec"><div class="t">Die Idee entsteht beim</div>${esc(ctxs.join(', '))}${T_.ctx.experiment ? ', Herumtüfteln' : ''}</div>
     <div class="sec"><div class="t">Führt zu</div>${next.length ? next.map(link).join(' ') : '<span class="small">– Ende dieses Pfads (vorerst)</span>'}</div>

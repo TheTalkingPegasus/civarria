@@ -33,9 +33,10 @@ const hourNow = () => (W.tick % C.TPD) * 24 / C.TPD;
 const SEASON_LEN = [25, 25, 25, 45]; // langer Winter
 function seasonOf(d) { let r = d % C.DPY; for (let i = 0; i < 4; i++) { if (r < SEASON_LEN[i]) return i; r -= SEASON_LEN[i]; } return 3; }
 function dayInSeason(d) { let r = d % C.DPY; for (let i = 0; i < 4; i++) { if (r < SEASON_LEN[i]) return r; r -= SEASON_LEN[i]; } return r; }
-const seasonNow = () => seasonOf(dayNum());
+let _SC = -1, _SV = 0, _NC = -1, _NV = false;
+const seasonNow = () => { if (_SC !== W.tick) { _SC = W.tick; _SV = seasonOf(dayNum()); } return _SV; };
 const yearNow = () => Math.floor(dayNum() / C.DPY) + 1;
-const isNight = () => { const h = hourNow(); return h >= 21 || h < 5.5; };
+const isNight = () => { if (_NC !== W.tick) { _NC = W.tick; const h = hourNow(); _NV = h >= 21 || h < 5.5; } return _NV; };
 const ageY = n => (W.tick - n.born) / C.TPY;
 function dateStr(t) {
   const d = Math.floor(t / C.TPD);
@@ -347,7 +348,7 @@ const TILE_COST = [0, 22, 11, 10, 14, 16, 25];
 function flowFor(T) {
   let F = FLOW.get(T.id);
   const raft = !!T.raft;
-  if (F && F.cx === T.cx && F.cy === T.cy && F.raft === raft && F.hv === (W.hutVer || 0) && (F.pv === W.pathVer || W.tick - F.t < C.TPY)) return F;
+  if (F && F.cx === T.cx && F.cy === T.cy && F.raft === raft && (F.pv === W.pathVer || W.tick - F.t < C.TPY)) return F;
   // Nur ein Fenster um das Lager: große Welten bleiben bezahlbar
   const RW = FLOW_R, x0 = Math.max(0, (T.cx | 0) - RW), y0 = Math.max(0, (T.cy | 0) - RW), MW = Math.min(C.MW, (T.cx | 0) + RW + 1) - x0, MH = Math.min(C.MH, (T.cy | 0) + RW + 1) - y0, N = MW * MH, d = new Int32Array(N).fill(1e9);
   const G = (lx, ly) => (ly + y0) * C.MW + lx + x0;
@@ -375,6 +376,7 @@ function flowFor(T) {
 function moveVia(n, O, tx, ty, speed) { return moveHome(n, O, tx, ty, speed); }
 function reachable(T, x, y) { const F = flowFor(T); if (dist(x, y, T.cx, T.cy) > FLOW_R - 2) return true; return F.at((y | 0) * C.MW + (x | 0)) < 1e9; }
 function moveHome(n, T, tx, ty, speed) {
+  if (W.hutVer && dist(n.x, n.y, tx, ty) < 30 && nearTownAny(n.x, n.y) && nearTownAny(tx, ty)) return moveToward(n, tx, ty, speed); // im Dorf: Rasterweg statt Flussfeld
   if (dist(n.x, n.y, tx, ty) < 9 || dist(tx, ty, T.cx, T.cy) > 10) return moveToward(n, tx, ty, speed);
   const F = flowFor(T), x = n.x | 0, y = n.y | 0; let bi = -1, bd = F.at(y * C.MW + x);
   if (bd >= 1e9) return moveToward(n, tx, ty, speed);
@@ -491,7 +493,7 @@ function discover(n, k) {
     weben: 'dreht Ziegenhaar zu einem Faden und kreuzt die Fäden zu einem festen Stoff',
     floss: 'bindet am Ufer Stämme mit Fasern zusammen – und treibt hinüber ans andere Ufer',
     steinbau: 'schichtet gebrochene Felsbrocken zu einer Mauer, die keinem Sturm weicht',
-  }[k];
+  }[k] || TECH[k].how || `kommt auf die Idee: ${TECH[k].desc.replace(/\.$/, '')}`;
   if (first) W.discovered[k] = { t: W.tick, by: n.id, byName: n.name, tribe: T.id };
   const tribeHad = T.members.some(id => id !== n.id && NPC.get(id)?.know[k]);
   if (tribeHad) { memo(n, `kam selbst auf ${TECH[k].name}`); n.prestige -= 20; if (k === 'zaehmung') tameWolf(n); return; }
@@ -646,6 +648,7 @@ function decide(n) {
   return choose(n, opts);
 }
 function choose(n, opts) {
+  { const T = tribeOf(n); if (T) itemsAdjust(n, T, opts); }
   cultureAdjust(n, opts);
   let best = null; for (const o of opts) if (!best || o.score > best.score) best = o;
   if (!best) best = { type: 'idle' };
@@ -671,8 +674,9 @@ function startAct(n, o) {
       let hx = T.cx, hy = T.cy;
       let bed = null; if ((o.type === 'sleep' || o.type === 'warm' || o.type === 'rest') && T.huts.length) { const h = T.huts[n.id % T.huts.length]; hx = h.x; hy = h.y; if (h.lx !== undefined) { const B = bedsOf(h); bed = B[Math.floor(n.id / T.huts.length) % B.length]; } }
       const spread = o.type === 'sleep' && !T.huts.length ? 7 : 3.5;
-      if (bed) { a.tx = bed[0] + (rnd() - 0.5) * 0.3; a.ty = bed[1]; } else { a.tx = hx + (rnd() - 0.5) * spread; a.ty = hy + (rnd() - 0.5) * spread; } a.what = o.what; break;
+      if (bed) { a.tx = bed[0] + (rnd() - 0.5) * 0.3; a.ty = bed[1]; } else { a.tx = hx + (rnd() - 0.5) * spread; a.ty = hy + (rnd() - 0.5) * spread; } a.what = o.what; a.forStore = o.forStore; break;
     }
+    case 'fetch': { a.what = o.what; const p = itemSpot(T); a.tx = p[0] + (rnd() - 0.5) * 0.6; a.ty = p[1]; break; }
     case 'eat': {
       if (n.inv.food + n.inv.meat > 0) { a.tx = n.x; a.ty = n.y; } else {
         a.tx = T.cx + (rnd() - 0.5) * 3; a.ty = T.cy + (rnd() - 0.5) * 3;
@@ -836,6 +840,7 @@ function stepNpc(n) {
       break;
     }
     case 'craft': stepCraft(n, T, a, at); break;
+    case 'fetch': stepFetch(n, T, a, at); break;
     case 'build': stepBuild(n, T, a, at); break;
     case 'ritual': case 'preach': {
       if (a.stage === 0) { if (at()) a.stage = 1; break; }
@@ -1099,6 +1104,36 @@ function stepExplore(n, T, a, at) {
   if (arrived || a.t > 160) { n.prestige += 0.5; startAct(n, { type: 'deliver' }); }
 }
 
+// ---------- Gegenstände: anlegen, im Lager aufbewahren, von dort holen ----------
+const ITEM_NAME = { faustkeil: 'ein Steinwerkzeug', speer: 'einen Speer', bogen: 'Pfeil und Bogen', korb: 'einen Korb', kleidung: 'Fellkleidung', tuch: 'Kleidung aus Stoff' };
+function equip(n, T, what) {
+  if (what === 'faustkeil') n.tools.faustkeil = 40;
+  else if (what === 'speer') n.tools.speer = 25;
+  else if (what === 'kleidung') { n.tools.kleidung = C.DPY * 2; n.clothType = 'fur'; }
+  else if (what === 'tuch') { n.tools.kleidung = C.DPY * (TK(T, 'webstuhl') ? 4 : 3); n.clothType = TK(T, 'schaf') && TK(T, 'spindel') ? 'wool' : TK(T, 'webstuhl') ? 'linen' : 'woven'; }
+  else if (what === 'korb') n.tools.korb = 40;
+  else if (what === 'bogen') n.tools.bogen = 40;
+}
+// Wo liegen die Sachen? Im Vorratshaus – sonst am Werkzeuggestell beim Feuer
+const itemSpot = T => T.storehouse && T.storehouse.lx !== undefined ? [T.storehouse.lx + 2.5, T.storehouse.ly + 2] : [T.cx + 2.2, T.cy - 1.6];
+// Wer etwas braucht, holt es aus dem Lager, statt es selbst zu machen; geschickte Leute fertigen auf Vorrat
+function itemsAdjust(n, T, opts) {
+  const I = T.items || {};
+  for (const o of opts) if (o.type === 'craft' && ITEM_NAME[o.what] && !o.forStore && (I[o.what] || 0) > 0) { o.type = 'fetch'; o.score += 0.2; }
+  if (ageY(n) < 15 || isNight()) return;
+  const settled = T.huts.length > 0 || !!T.storehouse, skill = n.tr.geschick + (TK(T, 'handwerker') ? 0.25 : 0);
+  if (!settled || skill < 0.55) return;
+  const want = Math.max(1, Math.ceil(T.members.length / 6));
+  const can = { faustkeil: n.know.faustkeil, speer: n.know.speer, bogen: n.know.bogen, korb: n.know.flechten, kleidung: n.know.fellkleidung && T.store.hide >= 2, tuch: n.know.weben && T.store.fiber >= 4 };
+  for (const w in can) if (can[w] && (I[w] || 0) < want) { opts.push({ type: 'craft', what: w, forStore: true, score: 0.22 + skill * 0.25 + rnd() * 0.12 }); break; }
+}
+function stepFetch(n, T, a, at) {
+  if (a.stage === 0) { if (at() || ++a.t > 200) { a.stage = 1; a.t = 0; } return; }
+  if (++a.t < 3) return;
+  const I = T.items || {};
+  if ((I[a.what] || 0) > 0) { I[a.what]--; equip(n, T, a.what); memo(n, `hat ${ITEM_NAME[a.what]} aus dem Lager geholt`); }
+  n.act = null;
+}
 function stepCraft(n, T, a, at) {
   const need = { tuch: { fiber: 4 }, faustkeil: { stone: 1 }, speer: { wood: 1 }, kleidung: { hide: 2 }, korb: { fiber: 3 }, topf: { clay: 2 }, bogen: { wood: 1, fiber: 2 } }[a.what];
   if (a.stage === 0) {
@@ -1128,13 +1163,10 @@ function stepCraft(n, T, a, at) {
   if (++a.w < craftTime(T, a.what)) return; // die eigentliche Arbeit
   {
     for (const k in need) { const fromInv = Math.min(n.inv[k], need[k]); n.inv[k] -= fromInv; T.store[k] -= need[k] - fromInv; }
-    if (a.what === 'faustkeil') { n.tools.faustkeil = 40; insightCtx(n, 'knap', 1); }
-    else if (a.what === 'speer') n.tools.speer = 25;
-    else if (a.what === 'kleidung') { n.tools.kleidung = C.DPY * 2; n.clothType = 'fur'; }
-    else if (a.what === 'tuch') { n.tools.kleidung = C.DPY * (TK(T, 'webstuhl') ? 4 : 3); n.clothType = TK(T, 'schaf') && TK(T, 'spindel') ? 'wool' : TK(T, 'webstuhl') ? 'linen' : 'woven'; }
-    else if (a.what === 'korb') n.tools.korb = 40;
-    else if (a.what === 'topf') { T.pots += TK(T, 'toepferscheibe') ? 2 : 1; }
-    else if (a.what === 'bogen') n.tools.bogen = 40;
+    if (a.what === 'faustkeil') insightCtx(n, 'knap', 1);
+    if (a.what === 'topf') { T.pots += TK(T, 'toepferscheibe') ? 2 : 1; }
+    else if (a.forStore) { const I = T.items || (T.items = {}); I[a.what] = (I[a.what] || 0) + 1; memo(n, `hat ${ITEM_NAME[a.what] || a.what} für das Lager gefertigt`); }
+    else equip(n, T, a.what);
     n.act = null;
   }
 }
@@ -1763,6 +1795,7 @@ function stepRaid(n, T, a, at) {
 function die(n, cause, killer) {
   const T = tribeOf(n);
   n.alive = false; n.deathCause = cause; n.died = W.tick;
+  if (T && ageY(n) >= 14) { const I = T.items || (T.items = {}); for (const k of ['speer', 'bogen', 'korb', 'faustkeil']) if (n.tools[k] > 8) I[k] = (I[k] || 0) + 1; }
   const i = W.npcs.indexOf(n); if (i >= 0) W.npcs.splice(i, 1);
   NPC.delete(n.id);
   if (T) { const j = T.members.indexOf(n.id); if (j >= 0) T.members.splice(j, 1); }

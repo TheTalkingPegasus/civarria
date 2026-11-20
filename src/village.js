@@ -73,6 +73,7 @@ function villageDaily() {
       if (h.worn && W.tick - h.worn > C.TPY * 2) { const P = T.town && T.town.lots[h.lot]; T.huts.splice(T.huts.indexOf(h), 1); if (P) { P.kind = 'bau'; P.prog = 3; P.stone = h.stone; P.mud = h.mud; } W.hutVer = (W.hutVer || 0) + 1; chron(1, `Ein Haus der ${T.name} ist eingestürzt – niemand hat es ausgebessert.`, { tribe: T.id }); break; }
     }
     if (TK(T, 'wegebau') && T.town && (T.roadT || 0) < W.tick - C.TPD * 10) planRoads(T);
+    if ((W.tick / C.TPD | 0) % 20 === T.id % 20) tidyCemeteries(T);
   }
 }
 

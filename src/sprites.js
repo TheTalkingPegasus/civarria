@@ -182,12 +182,14 @@ function heldTool(n, a) {
   if (!a) return null;
   const t = a.type;
   if ((t === 'raid' || t === 'defend') && typeof weaponOf === 'function') { const f = a.foe && NPC.get(a.foe); if (n.tools.bogen > 0 && (!f || dist(n.x, n.y, f.x, f.y) > 2.2)) return 'bogen'; const w = weaponOf(n); return w === 'faust' ? null : w; }
-  if (a.chop && a.wk) { const Tn = tribeOf(n), k = W.t[a.chop]; if (k === T_FOREST) return TK(Tn, 'kupfer_guss') ? 'kupferaxt' : TK(Tn, 'steinbeil') ? 'beil' : n.tools.faustkeil > 0 ? 'faustkeil' : null; return 'faustkeil'; }
+  if (a.chop && a.wk) { const Tn = tribeOf(n), k = W.t[a.chop]; if (k === T_FOREST) return copperFor(n) ? 'kupferaxt' : TK(Tn, 'steinbeil') ? 'beil' : n.tools.faustkeil > 0 ? 'faustkeil' : null; return 'faustkeil'; }
   if (t === 'bury' && a.stage === 2) return 'hacke';
+  if ((t === 'train' || t === 'guard') && typeof weaponOf === 'function') { const w = weaponOf(n); return w === 'faust' ? 'keule' : w; }
+  if (t === 'mine' && a.wk) return 'hacke';
   if (t === 'hunt' || t === 'raid' || t === 'defend' || t === 'watch') return n.tools.bogen > 0 ? 'bogen' : n.tools.speer > 0 ? (TK(tribeOf(n), 'kupfer_guss') ? 'kspeer' : 'speer') : (ageY(n) >= 13 ? 'keule' : null);
   if (t === 'fish') return TK(tribeOf(n), 'netz') ? 'netz' : n.tools.speer > 0 ? 'speer' : null;
   const Tn = typeof tribeOf === 'function' ? tribeOf(n) : null;
-  if (t === 'wood' || t === 'build' || t === 'construct') return TK(Tn, 'kupfer_guss') ? 'kupferaxt' : TK(Tn, 'steinbeil') ? 'beil' : n.tools.faustkeil > 0 ? 'faustkeil' : null;
+  if (t === 'wood' || t === 'build' || t === 'construct') return copperFor(n) ? 'kupferaxt' : TK(Tn, 'steinbeil') ? 'beil' : n.tools.faustkeil > 0 ? 'faustkeil' : null;
   if (t === 'craft') return a.what === 'kleidung' && TK(Tn, 'nadel') ? 'nadel' : a.what === 'tuch' && TK(Tn, 'spindel') ? 'spindel' : n.tools.faustkeil > 0 ? 'faustkeil' : null;
   if (t === 'farm') return a.job === 'harvest' && TK(Tn, 'sichel') ? 'sichel' : a.job !== 'harvest' && TK(Tn, 'hakenpflug') ? 'pflug' : 'hacke';
   if (t === 'gather') return n.tools.korb > 0 ? 'korb' : null;

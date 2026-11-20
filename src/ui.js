@@ -19,7 +19,8 @@ const ACT_TXT = { fetch: 'holt etwas aus dem Lager',
   explore: 'erkundet die Gegend', watch: 'beobachtet einen Fremden im Revier', diplo: 'reist als Gesandter', experiment: 'tüftelt herum', craft: 'stellt etwas her', build: 'baut eine Hütte', ritual: 'vollzieht ein Ritual',
   preach: 'predigt seinen Glauben', paint: 'malt an eine Felswand', heal: 'sucht Heilkräuter', lightfire: 'versucht, Feuer zu entfachen',
   fetchfire: 'holt Glut für das Lager', raid: 'zieht in den Kampf', return: 'kehrt heim', idle: 'schaut sich um',
-  council: 'berät sich mit den Angesehenen im Haupthaus', road: 'legt eine Straße an',
+  council: 'berät sich mit den Angesehenen im Haupthaus', road: 'legt eine Straße an', train: 'übt den Kampf', guard: 'hält Wache',
+  mine: 'schlägt Kupfererz aus dem Fels', smelt: 'schmilzt Erz am Brennofen',
   hide: 'versteckt sich vor den Angreifern', down: 'liegt verwundet am Boden', bury: 'kümmert sich um einen Toten',
 };
 const CTX_TXT = { craft: 'Herstellen von Dingen', fishing: 'Fischen', store: 'Vorräte anlegen', winter: 'Überwintern', paint: 'Malen', trade: 'Besuch bei anderen Sippen', talk: 'Gespräch', farm: 'Feldarbeit', sheepnear: 'Mufflons in der Nähe', cattlenear: 'Auerochsen in der Nähe', pignear: 'Wildschweine in der Nähe', donkeynear: 'Wildesel in der Nähe', herd: 'Vieh hüten', woodcut: 'Holz schlagen', cook: 'Kochen und Essen', spin: 'Fäden drehen', potter: 'Töpfern', irrigate: 'Feldarbeit am Fluss', carry: 'Lasten schleppen', count: 'Vorräte zählen', sky: 'Sterne beobachten', temple: 'Rituale in der Siedlung', crowd: 'Leben in großer Gemeinschaft', theft: 'Streit um Besitz', war: 'Kampf', stone: 'Steine sammeln', hunt: 'Jagen', knap: 'Feuerstein bearbeiten', firework: 'Holz ins Feuer legen', eatfire: 'Essen am Feuer', coldhide: 'Frieren mit Fellen', gather: 'Sammeln', water: 'Arbeiten am Wasser', coldcamp: 'Frieren im Lager', wood: 'Holz schlagen', sickgather: 'Sammeln, wenn jemand krank ist', gathercamp: 'Sammeln nahe dem Lager', grief: 'Trauer um einen Toten', ritual: 'Rituale', rest: 'Gespräche am Feuer', clayfire: 'Lehm nahe am Feuer', wolfnear: 'Jagen nahe bei Wölfen', waterblock: 'Festsitzen am Fluss', build: 'Bauen', raided: 'Überfallen werden', goatnear: 'Jagen nahe bei Wildziegen' };
@@ -304,10 +305,10 @@ function draw(t) {
   if (Z > 0.45) for (const b of bushesInView()) {
     if (b.gone) continue;
     const px = b.x * TS, py = b.y * TS;
-    sprC(ctx, 'bush', px, py, 1.1); if (season === 3) { ctx.fillStyle = 'rgba(220,225,230,.45)'; ctx.fillRect(px - 8, py - 4, 16, 9); }
-    if (b.f > 0 && season !== 3) { ctx.fillStyle = '#c23b4a'; const k = Math.min(5, Math.ceil(b.f / 3)); for (let i = 0; i < k; i++) { ctx.beginPath(); ctx.arc(px + Math.cos(i * 2.4) * 2.6, py + Math.sin(i * 2.4) * 2.6, 1.2, 0, 7); ctx.fill(); } }
+    drawPlant(b, px, py, season);
   }
   if (Z > 0.3) drawRoads(x0, y0, x1, y1);
+  if (Z > 0.35) for (const o of (W.ore || [])) if (inView(o.x, o.y)) drawOre(o);
   if (Z > 0.3) for (const G of (W.ghosts || [])) if (inView(G.cx, G.cy, 30)) drawGhost(G);
   // Gräber
   for (const g of W.graves) { if (!inView(g.x, g.y)) continue; drawGrave(g); }
@@ -843,7 +844,7 @@ function renderSide(full = true) {
     const near = TECH_IDS.filter(k => !known.includes(k) && TECH[k].req.every(r => known.includes(r)));
     b.innerHTML = `<h3>Wissen der Welt</h3><div class="row"><button id="opentree">🌳 Zivilisationsbaum öffnen</button></div>
       <div class="small" style="margin:8px 0">${known.length} von ${TECH_IDS.length} Entdeckungen sind bekannt${lost.length ? `, ${lost.length} wieder vergessen` : ''}. ${near.length} liegen gerade in Reichweite.</div>
-      <h3>In Reichweite</h3>${near.map(k => { let best = 0; for (const n of W.npcs) { const v = (n.insight[k] || 0) / (n.thr[k] || TECH[k].D); if (v > best) best = v; } return `<div class="tech" data-tk="${k}"><div class="n">${TECH[k].icon} ${TECH[k].name}</div>${TECH[k].condTxt ? `<div class="small">braucht: ${TECH[k].condTxt}</div>` : ''}<div class="p"><b style="width:${Math.min(100, best * 100).toFixed(0)}%"></b></div></div>`; }).join('') || '<div class="small">Nichts – erst muss anderes entdeckt werden.</div>'}`;
+      <h3>In Reichweite</h3>${near.map(k => { const best = (W.tprog || {})[k] || 0; return `<div class="tech" data-tk="${k}"><div class="n">${TECH[k].icon} ${TECH[k].name}</div>${TECH[k].condTxt ? `<div class="small">braucht: ${TECH[k].condTxt}</div>` : ''}<div class="p"><b style="width:${Math.min(100, best * 100).toFixed(0)}%"></b></div></div>`; }).join('') || '<div class="small">Nichts – erst muss anderes entdeckt werden.</div>'}`;
     $('opentree').onclick = () => openTree();
     b.querySelectorAll('[data-tk]').forEach(el => el.onclick = () => openTree(el.dataset.tk));
   } else if (tab === 'stats') {
@@ -911,9 +912,9 @@ function drawCharts() {
 }
 
 // ---------------------------------------------------------------- Inspektor
-function select(id) { ui.sel = id; ui.selTribe = null; renderInspector(true); }
+function select(id) { ui.sel = id; ui.selTribe = null; simCmd('sel', { id }); renderInspector(true); }
 function selectTribe(id) { ui.selTribe = id; ui.sel = null; renderInspector(true); }
-function closeInspector() { ui.sel = null; ui.selTribe = null; cam.follow = 0; $('insp').style.display = 'none'; }
+function closeInspector() { simCmd('sel', { id: 0 }); ui.sel = null; ui.selTribe = null; cam.follow = 0; $('insp').style.display = 'none'; }
 let inspDrag = false;
 function refreshInspector() { if (inspDrag) return; if (ui.sel || ui.selTribe) renderInspector(false); }
 function bar(label, v, col) { return `<div class="bar"><span>${label}</span><i><b style="width:${clamp(v, 0, 100)}%;background:${col || (v < 25 ? '#d9644a' : v < 50 ? '#e0b03c' : '#7bbf6a')}"></b></i></div>`; }
@@ -977,7 +978,7 @@ function renderInspector(full) {
       $('wgo').onclick = () => { const m = NPC.get(ui.sel); if (!m) return; const k = $('wsel').value, name = m.name; simAsk('whisper', { id: m.id, kind: k }).then(ok => { $('wmsg').textContent = ok ? '✓ Die Idee ist gesät. Was daraus wird, entscheidet ' + name + ' selbst.' : 'Das hat nicht geklappt (kein geeigneter Ort gefunden).'; renderInspector(false); }); };
     }
     const L = T && T.leader === n.id;
-    $('ihead').innerHTML = `<h2>${esc(fullName(n))}</h2><div class="sub">${n.sex === 'f' ? '♀' : '♂'} ${age} Jahre · <span class="link" data-tribe="${T.id}"><span class="dot" style="background:${T.col}"></span> ${esc(T.name)}</span>${L ? ' · <b style="color:var(--acc)">Oberhaupt</b>' : ''}<br>${esc(actText(n))}${n.sick > 0 ? ' · <span style="color:#7fae5a">krank</span>' : ''}${n.injured > 0 ? ' · <span style="color:#ff6b6b">verletzt</span>' : ''}</div>
+    $('ihead').innerHTML = `<h2>${esc(fullName(n))}</h2><div class="sub">${n.sex === 'f' ? '♀' : '♂'} ${age} Jahre · <span class="link" data-tribe="${T.id}"><span class="dot" style="background:${T.col}"></span> ${esc(T.name)}</span>${L ? ' · <b style="color:var(--acc)">Oberhaupt</b>' : n.job ? ` · <b>${JOBS[n.job].icon} ${jobName(n)}</b>${n.jx && n.jx[n.job] > 60 ? ` <span class="small">(${n.jx[n.job] > 400 ? 'Meister' : n.jx[n.job] > 180 ? 'erfahren' : 'eingearbeitet'})</span>` : ''}` : ''}<br>${esc(actText(n))}${n.sick > 0 ? ' · <span style="color:#7fae5a">krank</span>' : ''}${n.injured > 0 ? ' · <span style="color:#ff6b6b">verletzt</span>' : ''}</div>
       <div class="row"><button id="fol" class="${cam.follow === n.id ? 'on' : ''}">${cam.follow === n.id ? 'Verfolgen beenden' : 'Verfolgen'}</button><button id="ctr">Hinsehen</button></div>`;
     $('fol').onclick = () => { cam.follow = cam.follow === n.id ? 0 : n.id; if (cam.follow) cam.z = Math.max(cam.z, 2.2); renderInspector(false); };
     $('ctr').onclick = () => { centerOn(n.x, n.y); cam.z = Math.max(cam.z, 2.2); };
@@ -1020,7 +1021,8 @@ function renderInspector(full) {
       <div class="row"><button id="tc">Zum Lager</button></div>
       <div class="sec"><div class="t">${settlementName(T)}</div>${T.bld ? `<div class="small">Bauten: ${Object.entries(T.bld).map(([k, v]) => ({ oven: 'Backofen', kiln: 'Brennofen', temple: 'Tempel', wall: 'Stadtmauer' }[k] + (v < BUILD_NEED[k] ? ` (im Bau, ${Math.round(v / BUILD_NEED[k] * 100)} %)` : ''))).join(' · ')}</div>` : ''}
         <div>Oberhaupt: ${L ? nameLink(L.id) : '–'}</div>
-        <div>Feuer: ${T.fire.lit ? '🔥 brennt' : '<b style="color:#d9644a">erloschen</b>'} · Vorräte: ${Math.round(T.store.food)} · Hütten: ${T.huts.filter(h => !h.stone).length}${T.huts.some(h => h.stone) ? ' · Steinhäuser: ' + T.huts.filter(h => h.stone).length : ''}${T.cleared ? ' · gerodet: ' + T.cleared + ' Felder' : ''}${T.pots ? ' · Töpfe: ' + T.pots : ''}</div>
+        <div>Feuer: ${T.fire.lit ? '🔥 brennt' : '<b style="color:#d9644a">erloschen</b>'} · Vorräte: ${Math.round(T.store.food)} · Hütten: ${T.huts.filter(h => !h.stone).length}${T.huts.some(h => h.stone) ? ' · Steinhäuser: ' + T.huts.filter(h => h.stone).length : ''}${T.cleared ? ' · gerodet: ' + T.cleared + ' Felder' : ''}${T.pots ? ' · Töpfe: ' + T.pots : ''}${T.store.ore ? ' · Kupfererz: ' + Math.round(T.store.ore) : ''}${T.cu ? ' · Kupfer: ' + T.cu : ''}</div>
+        ${T.jobs ? `<div class="small">Berufe: ${Object.entries(T.jobs).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${JOBS[k].icon} ${v} ${v === 1 ? JOBS[k].m : ({ sammler: 'Sammler', jaeger: 'Jäger', fischer: 'Fischer', bauer: 'Bauern', hirte: 'Hirten', holz: 'Holzfäller', baumeister: 'Baumeister', handwerker: 'Handwerker', heiler: 'Heiler', krieger: 'Krieger', priester: 'Schamanen', bergmann: 'Bergleute', kundschafter: 'Kundschafter' })[k]}`).join(' · ')}</div>` : ''}
         <div>${tribeFields(T).length ? 'Felder: ' + tribeFields(T).length + ' · ' : ''}${(() => { const h = {}; for (const a of W.animals) if (a.tribe === T.id && HERD_K[a.k]) h[a.k] = (h[a.k] || 0) + 1; const N = { goat: 'Ziegen', sheep: 'Schafe', cattle: 'Rinder', pig: 'Schweine', donkey: 'Esel' }; return Object.entries(h).map(([k, v]) => N[k] + ': ' + v).join(' · ') + (Object.keys(h).length ? ' · ' : ''); })()}${(T.traps || []).length ? 'Reusen: ' + T.traps.length + ' · ' : ''}${T.storehouse ? 'Vorratshaus · ' : ''}${(() => { const I = T.items || {}, N = { speer: 'Speere', bogen: 'Bögen', faustkeil: 'Steinwerkzeuge', korb: 'Körbe', kleidung: 'Fellkleider', tuch: 'Stoffkleider' }; const l = Object.entries(I).filter(([, v]) => v > 0).map(([k, v]) => v + ' ' + N[k]); return l.length ? 'Im Lager: ' + l.join(', ') + ' · ' : ''; })()}${T.pal ? 'Palisade: ' + Math.round(T.pal / 24 * 100) + ' %' : ''}</div>
         <div class="small">Ehe: ${(T.poly || 0) >= 0.5 ? 'Vielehe – angesehene Männer haben mehrere Frauen' : 'Einehe'}</div>
         <div class="small">Wintervorrat-Ziel: ${T.winterTarget} pro Kopf${T.winterTarget > 14 ? ' (aus Hungerwintern gelernt)' : ''}</div></div>
@@ -1029,13 +1031,14 @@ function renderInspector(full) {
       <div class="sec"><div class="t">Gebote</div>${T.rules.length ? T.rules.map(r => `<div class="rule">„${esc(r.text)}“ <span class="small">seit ${dateStr(r.t)}</span></div>`).join('') : '<span class="small">Noch hat sich nichts zu einem festen Gebot verdichtet.</span>'}</div>
       <div class="sec"><div class="t">Werte der Sippe</div><div class="small" style="margin-bottom:4px">Was hier als richtig gilt – es entsteht aus den Menschen, ihren Erfahrungen und ihrem Oberhaupt.</div>${T.cv.map((v, i) => [i, v]).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, ui.allVals ? NV : 10).map(([i, v]) => vbar(i, v)).join('')}<button class="lnk" id="allv">${ui.allVals ? 'weniger zeigen' : 'alle ' + NV + ' Werte zeigen'}</button></div>` : ''}
       <div class="sec"><div class="t">Wissen der Sippe</div>${ks.length ? ks.map(k => `<span class="chip">${TECH[k].icon} ${TECH[k].name}</span>`).join('') : '<span class="small">Nur das Überlieferte.</span>'}</div>
-      ${(() => { const nx = TECH_IDS.filter(k => !tribeKnows(T, k) && TECH[k].req.every(r => tribeKnows(T, r))); if (!nx.length) return ''; return `<div class="sec"><div class="t">Als Nächstes möglich</div>${nx.map(k => { let best = 0; for (const id of T.members) { const n = NPC.get(id); if (n) best = Math.max(best, (n.insight[k] || 0) / (n.thr[k] || TECH[k].D)); } return `<div class="bar"><span style="width:150px">${TECH[k].icon} ${TECH[k].name}</span><i><b style="width:${Math.min(100, best * 100)}%;background:#6d8fbf"></b></i></div><div class="small" style="margin:-2px 0 4px">entsteht beim ${Object.keys(TECH[k].ctx).map(c => CTX_TXT[c] || (c === 'experiment' ? 'Herumtüfteln' : c)).join(', ')}</div>`; }).join('')}</div>`; })()}
+      ${(() => { const nx = TECH_IDS.filter(k => !tribeKnows(T, k) && TECH[k].req.every(r => tribeKnows(T, r))); if (!nx.length) return ''; return `<div class="sec"><div class="t">Als Nächstes möglich</div>${nx.map(k => { const best = (T.tprog || {})[k] || 0; return `<div class="bar"><span style="width:150px">${TECH[k].icon} ${TECH[k].name}</span><i><b style="width:${Math.min(100, best * 100)}%;background:#6d8fbf"></b></i></div><div class="small" style="margin:-2px 0 4px">entsteht beim ${Object.keys(TECH[k].ctx).map(c => CTX_TXT[c] || (c === 'experiment' ? 'Herumtüfteln' : c)).join(', ')}${TECH[k].cond && !TECH[k].cond(T) ? ` · <span style="color:#d9a54a">${TECH[k].condTxt}</span>` : ''} · ${T.inspire && T.inspire.k === k ? '<b style="color:#e0c060">✨ Eingebung wirkt</b>' : `<span class="link" data-insp="${k}">✨ göttliche Eingebung</span>`}</div>`; }).join('')}</div>`; })()}
       ${faiths.length ? `<div class="sec"><div class="t">Glaube & Bräuche</div>${faiths.map(([k, s]) => `<div><span class="chip b">${esc(beliefName(k))}</span> <span class="small">${Math.round(s * 100)} % der Erwachsenen${T.customs.includes(k) ? ' · Brauch' : ''}</span></div>`).join('')}</div>` : ''}
       <div class="sec"><div class="t">Revier</div><div>${T.area || 0} Felder Land <span class="small">– wächst mit Menschen, Hütten und gerodetem Land, endet an Flüssen und an den Grenzen der Nachbarn</span></div>${L && L.act && L.act.type === 'diplo' ? `<div class="small">${esc(L.name)} ${esc(actText(L))}</div>` : ''}</div>
       ${rels.length ? `<div class="sec"><div class="t">Nachbarn & Haltung</div>${rels.map(([O, v]) => { const st = stance(T, O), tr = T.treaties.filter(t => t.with === O.id).map(t => t.kind === 'buendnis' ? '🤝 Bündnis' : '🕊 Frieden').join(' '), acc = (O.access[T.id] || 0) > W.tick ? ' · darf dort jagen' : '', owe = T.debt[O.id] ? ' · steht in ihrer Schuld' : '', gr = T.grudge[O.id] ? ' · Groll' : ''; return `<div><span class="link" data-tribe="${O.id}"><span class="dot" style="background:${O.col}"></span> ${esc(O.name)}</span> <span class="small">– ${v > 25 ? 'befreundet' : v > 5 ? 'freundlich' : v > -15 ? 'vorsichtig' : v > -45 ? 'misstrauisch' : 'verfeindet'} · bei uns: ${STANCE_TXT[st]}${acc}${owe}${gr}</span> ${tr}</div>`; }).join('')}</div>` : ''}
       <div class="sec"><div class="t">Mitglieder</div><div style="column-count:2">${mem.sort((a, b) => b.prestige - a.prestige).slice(0, 40).map(n => `<div>${nameLink(n.id)} <span class="small">${Math.floor(ageY(n))}</span></div>`).join('')}</div></div>`;
     box.querySelector('.x').onclick = closeInspector;
     $('tc').onclick = () => centerOn(T.cx, T.cy);
+    box.querySelectorAll('[data-insp]').forEach(el => el.onclick = () => { simCmd('inspire', { tribe: T.id, k: el.dataset.insp }); T.inspire = { k: el.dataset.insp }; renderInspector(true); });
     bindVals(box); bindLinks(box);
   }
 }
@@ -1075,7 +1078,7 @@ function hover(e) {
   const tip = $('tip'); const { n, wx, wy } = pickAt(e.clientX, e.clientY);
   let txt = '';
   if (n) txt = `<b>${esc(n.name)}</b> · ${esc(actText(n))}`;
-  else { const a = W.animals.find(a => dist(a.x, a.y, wx, wy) < 0.7); if (a) txt = a.k === 'goat' ? (a.tribe ? 'Ziege der ' + (TRIBE.get(a.tribe)?.name || '?') : 'Wildziege') : a.k === 'deer' ? 'Hirsch' : a.k === 'horse' ? 'Wildpferd' : a.owner ? 'Hund von ' + (NPC.get(a.owner)?.name || '?') : 'Wolf'; else { const b = bushesNear(wx, wy, 0.6)[0]; if (b) txt = b.f > 0 ? `Beerenstrauch (${b.f})` : 'Abgeerntetes Gebüsch'; else { const p = (W.paintAll || []).find(p => dist(p.x, p.y, wx, wy) < 0.8); if (p) txt = `Felsbild von ${esc(p.by)}${p.k ? ' – zeigt ' + TECH[p.k].name : ''}`; else { const g = W.graves.find(g => dist(g.x, g.y, wx, wy) < 0.6); const G = !g && (W.ghosts || []).find(G => G.huts.some(h => wx >= h.lx && wx < h.lx + h.w && wy >= h.ly && wy < h.ly + h.h)); if (G) { const y = Math.round(ghostAge(G)); txt = `${G.huts.some(h => decayOf(h, G) >= 2) ? 'Ruinen' : 'Verlassene Häuser'} der ${esc(G.name)} – ${G.why === 'fort' ? 'fortgezogen' : 'ausgestorben'} vor ${y < 1 ? 'weniger als einem Jahr' : y === 1 ? 'einem Jahr' : y + ' Jahren'}`; } else if (g) txt = `Grab von ${esc(g.name)}${g.full && g.full !== g.name ? ' (' + esc(g.full) + ')' : ''}`; else { const fi = (wy | 0) * C.MW + (wx | 0), f = W.fields[fi]; if (f) txt = `Feld der ${esc(TRIBE.get(f.tr)?.name || '?')} – ${['brach', 'frisch gesät', 'wächst', 'reif zur Ernte'][f.st]}`; else if (W.path[fi]) txt = ['', 'Trampelpfad', 'ausgetretener Pfad', 'viel begangener Weg'][W.path[fi]]; } } } } }
+  else { const a = W.animals.find(a => dist(a.x, a.y, wx, wy) < 0.7); if (a) txt = a.k === 'goat' ? (a.tribe ? 'Ziege der ' + (TRIBE.get(a.tribe)?.name || '?') : 'Wildziege') : a.k === 'deer' ? 'Hirsch' : a.k === 'horse' ? (a.tribe ? 'Pferd der ' + (TRIBE.get(a.tribe)?.name || '?') : 'Wildpferd') : ({ sheep: 'Mufflon', cattle: 'Auerochse', pig: 'Wildschwein', donkey: 'Wildesel' }[a.k] && !a.tribe) ? { sheep: 'Mufflon', cattle: 'Auerochse', pig: 'Wildschwein', donkey: 'Wildesel' }[a.k] : ({ sheep: 'Schaf', cattle: 'Rind', pig: 'Schwein', donkey: 'Esel' }[a.k]) ? { sheep: 'Schaf', cattle: 'Rind', pig: 'Schwein', donkey: 'Esel' }[a.k] + ' der ' + (TRIBE.get(a.tribe)?.name || '?') : a.owner ? 'Hund von ' + (NPC.get(a.owner)?.name || '?') : 'Wolf'; else { const ore = (W.ore || []).find(o => dist(o.x, o.y, wx, wy) < 0.9); const b = !ore && bushesNear(wx, wy, 0.6)[0]; if (ore) txt = ore.amt > 0 ? `Kupfererz – noch etwa ${ore.amt} Brocken` : 'Erschöpfte Erzader'; else if (b) { const P = PLANT[b.k || 'berry'], nm = { berry: 'Beerenstrauch', apple: 'Wildapfelbaum', hazel: 'Haselstrauch', mushroom: 'Pilzstelle' }[b.k || 'berry']; txt = b.f > 0 ? `${nm} – ${P.name} (${b.f})` : `${nm} – ${b.k === 'mushroom' ? 'gerade keine Pilze' : 'abgeerntet'}`; } else { const p = (W.paintAll || []).find(p => dist(p.x, p.y, wx, wy) < 0.8); if (p) txt = `Felsbild von ${esc(p.by)}${p.k ? ' – zeigt ' + TECH[p.k].name : ''}`; else { const g = W.graves.find(g => dist(g.x, g.y, wx, wy) < 0.6); const G = !g && (W.ghosts || []).find(G => G.huts.some(h => wx >= h.lx && wx < h.lx + h.w && wy >= h.ly && wy < h.ly + h.h)); if (G) { const y = Math.round(ghostAge(G)); txt = `${G.huts.some(h => decayOf(h, G) >= 2) ? 'Ruinen' : 'Verlassene Häuser'} der ${esc(G.name)} – ${G.why === 'fort' ? 'fortgezogen' : 'ausgestorben'} vor ${y < 1 ? 'weniger als einem Jahr' : y === 1 ? 'einem Jahr' : y + ' Jahren'}`; } else if (g) txt = `Grab von ${esc(g.name)}${g.full && g.full !== g.name ? ' (' + esc(g.full) + ')' : ''}`; else { const fi = (wy | 0) * C.MW + (wx | 0), f = W.fields[fi]; if (f) txt = `Feld der ${esc(TRIBE.get(f.tr)?.name || '?')} – ${['brach', 'frisch gesät', 'wächst', 'reif zur Ernte'][f.st]}`; else if (W.path[fi]) txt = ['', 'Trampelpfad', 'ausgetretener Pfad', 'viel begangener Weg'][W.path[fi]]; } } } } }
   if (txt) { tip.innerHTML = txt; tip.style.display = 'block'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 12 + 'px'; } else tip.style.display = 'none';
 }
 cv.addEventListener('pointerleave', () => $('tip').style.display = 'none');
@@ -1140,6 +1143,7 @@ function adoptW(lite) {
   C.MW = W.MW || 400; C.MH = W.MH || 270;
   NPC = new Map(); for (const n of W.npcs) NPC.set(n.id, n); TRIBE = new Map(); for (const T of W.tribes) TRIBE.set(T.id, T); OWN = OWN_M;
   // Blickrichtung & Zwischenpositionen der bisherigen Figuren übernehmen
+  for (const n of W.npcs) { if (!n.mem) { n.mem = []; n.rel = {}; n.insight = {}; n.thr = {}; n.spots = []; n.exp = { gather: 0, hunt: 0, fish: 0 }; n.jx = {}; } }
   for (const n of W.npcs) { const p = prev.get(n.id); if (p) { n.face = p.face; n.flip = p.flip; n.px = p.px; n.py = p.py; n.x = p.x; n.y = p.y; } }
   AMAP = new Map(); for (const a of W.animals) AMAP.set(a.id, a);
   updateChops(); combatFx();
@@ -1203,7 +1207,7 @@ function treeLayout() {
   return { pos, bands, w: 40 + (maxD + 1) * (NW + GX), h: y, NW, NH };
 }
 function techState(k) {
-  let holders = 0, best = 0; for (const n of W.npcs) { if (n.know[k]) holders++; else { const v = (n.insight[k] || 0) / (n.thr[k] || TECH[k].D); if (v > best) best = v; } }
+  let holders = 0; const best = (W.tprog || {})[k] || 0; for (const n of W.npcs) if (n.know[k]) holders++;
   const reqOk = TECH[k].req.every(r => W.npcs.some(n => n.know[r]));
   return { holders, best, reqOk, st: holders ? 'known' : W.discovered[k] ? 'lost' : reqOk ? 'near' : 'locked' };
 }
@@ -1513,4 +1517,43 @@ function drawGhost(G) {
   }
   // ein verlassenes Haupthaus
   if (G.bld && G.bld.hall >= BUILD_NEED.hall) { const P = Object.values(G.town.lots).find(L => L.kind === 'hall'); if (P) { const X = P.x0 * TS, Y = P.y0 * TS; ctx.fillStyle = age < 20 ? 'rgba(60,45,30,.6)' : 'rgba(90,75,55,.5)'; ctx.fillRect(X, Y, P.w * TS, P.h * TS); ctx.fillStyle = '#4a3424'; for (let i = 0; i < 10; i++) if (hash(i, P.x0) < 0.75 - age / 120) ctx.fillRect(X + i * P.w * TS / 10, Y + (i % 2) * (P.h * TS - 4), 5, 4); } }
+}
+
+// ---------------------------------------------------------------- Wildpflanzen: Beeren, Wildäpfel, Haselnüsse, Pilze
+function drawPlant(b, px, py, season) {
+  const k = b.k || 'berry', n = b.f;
+  if (k === 'mushroom') { // nur sichtbar, wenn Pilze stehen
+    if (n <= 0) return; const c = Math.min(5, Math.ceil(n / 2.5));
+    for (let i = 0; i < c; i++) { const x = px + Math.cos(i * 2.1 + b.id) * 4, y = py + Math.sin(i * 2.1 + b.id) * 2.5; ctx.fillStyle = '#efe6cc'; ctx.fillRect(x - 0.5, y - 1, 1.5, 2.5); ctx.fillStyle = i % 3 === 2 ? '#c8a050' : '#8a5a32'; ctx.fillRect(x - 2, y - 2.5, 4.5, 2); ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(x - 1, y - 2.5, 1, 1); }
+    return;
+  }
+  if (k === 'apple') { // kleiner Wildapfelbaum
+    ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.beginPath(); ctx.ellipse(px, py + 5, 8, 3, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = '#5a3d22'; ctx.fillRect(px - 1, py - 2, 3, 8);
+    ctx.fillStyle = season === 3 ? '#6a5a40' : season === 2 ? '#a8902a' : '#3f8a32'; ctx.beginPath(); ctx.arc(px, py - 6, 8, 0, 7); ctx.fill();
+    ctx.fillStyle = season === 3 ? '#7e6c4c' : season === 2 ? '#c8a83a' : '#55a83e'; ctx.beginPath(); ctx.arc(px - 2, py - 8, 4.5, 0, 7); ctx.fill();
+    if (season === 0) { ctx.fillStyle = '#f4e0ea'; for (let i = 0; i < 6; i++) ctx.fillRect(px + Math.cos(i * 1.7) * 5, py - 6 + Math.sin(i * 1.7) * 4, 1.5, 1.5); } // Blüten
+    if (n > 0 && season !== 3) { ctx.fillStyle = season === 2 ? '#c8302a' : '#9ab83a'; const c = Math.min(7, Math.ceil(n / 4)); for (let i = 0; i < c; i++) { ctx.beginPath(); ctx.arc(px + Math.cos(i * 2.4) * 5, py - 6 + Math.sin(i * 2.4) * 4, 1.4, 0, 7); ctx.fill(); } }
+    return;
+  }
+  sprC(ctx, 'bush', px, py, 1.1); if (season === 3) { ctx.fillStyle = 'rgba(220,225,230,.45)'; ctx.fillRect(px - 8, py - 4, 16, 9); }
+  if (n > 0 && (season !== 3 || k === 'hazel')) {
+    const c = Math.min(5, Math.ceil(n / 3));
+    ctx.fillStyle = k === 'hazel' ? '#9a6a3a' : '#c23b4a';
+    for (let i = 0; i < c; i++) { ctx.beginPath(); ctx.arc(px + Math.cos(i * 2.4) * 2.6, py + Math.sin(i * 2.4) * 2.6, k === 'hazel' ? 1.4 : 1.2, 0, 7); ctx.fill(); }
+  }
+}
+
+// ---------------------------------------------------------------- Erzadern im Fels
+function drawOre(o) {
+  const X = o.x * TS, Y = o.y * TS, f = o.max ? o.amt / o.max : 0;
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(X, Y + 7, 14, 4, 0, 0, 7); ctx.fill();
+  // ein Felsbrocken mit grünen und blauen Erzadern
+  const rock = (x, y, w, h) => { ctx.fillStyle = '#5e5a55'; ctx.fillRect(x, y, w, h); ctx.fillStyle = '#8a857d'; ctx.fillRect(x + 1, y, w - 2, 2); ctx.fillStyle = '#46433f'; ctx.fillRect(x, y + h - 2, w, 2); };
+  rock(X - 12, Y - 6, 15, 13); rock(X + 1, Y - 3, 12, 10); rock(X - 6, Y - 11, 11, 7);
+  if (f <= 0) { ctx.fillStyle = '#2a2724'; ctx.fillRect(X - 6, Y - 3, 12, 7); ctx.fillStyle = '#6e6a64'; for (let i = 0; i < 4; i++) ctx.fillRect(X - 10 + i * 6, Y + 6, 3, 2); return; } // ausgebeutet
+  const n = Math.max(3, Math.round(11 * f));
+  for (let i = 0; i < n; i++) { const a = hash(o.id % 9973 + i, 5), b = hash(i, o.id % 997); ctx.fillStyle = i % 3 === 2 ? '#3fb0b0' : '#4cd078'; ctx.fillRect(X - 11 + a * 21, Y - 9 + b * 14, 3, 2); ctx.fillStyle = 'rgba(255,255,255,.5)'; if (i % 4 === 0) ctx.fillRect(X - 11 + a * 21, Y - 9 + b * 14, 1, 1); }
+  ctx.fillStyle = '#c8783a'; ctx.fillRect(X + 4, Y + 1, 3, 2); ctx.fillRect(X - 7, Y - 1, 2, 2);
+  if (Math.floor(FT * 1.5 + o.id) % 6 === 0) { ctx.fillStyle = '#e8fff0'; ctx.fillRect(X - 2, Y - 8, 1, 3); ctx.fillRect(X - 3, Y - 7, 3, 1); } // Glitzern
 }

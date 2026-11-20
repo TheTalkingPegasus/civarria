@@ -16,7 +16,7 @@ const WEAPONS = {
   bogen:     { name: 'Pfeil und Bogen', dmg: [8, 14], range: 6.5, cd: 11 },
 };
 function weaponOf(n) {
-  const T = tribeOf(n), cu = TK(T, 'kupfer_guss');
+  const T = tribeOf(n), cu = copperFor(n);
   if (n.tools.speer > 0) return cu ? 'kspeer' : 'speer';
   if (cu) return 'kupferaxt';
   if (TK(T, 'steinbeil')) return 'beil';
@@ -33,7 +33,7 @@ const fitToFight = m => m && m.alive !== false && !(m.act && (m.act.type === 'do
 // Ein Schlag oder Schuss
 function strike(n, foe, R, wk) {
   const Wp = WEAPONS[wk];
-  const hit = 0.5 + (n.tr.geschick - 0.5) * 0.4 + (n.tr.mut - 0.5) * 0.15 - (foe.tr.geschick - 0.5) * 0.25 - (n.injured > 0 ? 0.15 : 0) - (ageY(n) > 50 ? 0.12 : 0) - blockOf(foe) + (wk === 'bogen' ? -0.08 : 0);
+  const hit = (jobSkill(n, 'krieger') - 1) * 0.5 + 0.5 + (n.tr.geschick - 0.5) * 0.4 + (n.tr.mut - 0.5) * 0.15 - (foe.tr.geschick - 0.5) * 0.25 - (n.injured > 0 ? 0.15 : 0) - (ageY(n) > 50 ? 0.12 : 0) - blockOf(foe) + (wk === 'bogen' ? -0.08 : 0);
   n.fx = { k: wk === 'bogen' ? 'shoot' : 'swing', t: W.tick, x: foe.x, y: foe.y, hit: 0 };
   if (rnd() > hit) return; // daneben oder abgewehrt
   const dmg = (Wp.dmg[0] + rnd() * (Wp.dmg[1] - Wp.dmg[0])) * (1 + (n.tr.mut - 0.5) * 0.2) * (1 - armorOf(foe));
@@ -86,7 +86,7 @@ function raiseAlarm(E, T, R) {
     const m = NPC.get(id); if (!m) continue;
     if (m.act && (m.act.type === 'raid' || m.act.type === 'defend' || m.act.type === 'hide' || m.act.type === 'down' || m.act.type === 'diplo')) continue;
     if (dist(m.x, m.y, E.cx, E.cy) > z + 14) continue;
-    const age = ageY(m), brave = m.tr.mut + (cvOf(E, 'krieger') || 0) * 0.3 + (id === E.leader ? 0.5 : 0);
+    const age = ageY(m), brave = m.tr.mut + (cvOf(E, 'krieger') || 0) * 0.3 + (id === E.leader ? 0.5 : 0) + (m.job === 'krieger' ? 1 : 0);
     if (age >= 15 && age < 62 && m.health > 40 && !m.injured && brave > (m.sex === 'm' ? 0.25 : 0.5)) startAct(m, { type: 'defend', raid: R.id });
     else startAct(m, { type: 'hide', raid: R.id });
   }
@@ -223,7 +223,7 @@ function stepBury(n, T, a) {
     if (moveHome(n, T, c.x, c.y, 1) || dist(n.x, n.y, c.x, c.y) < 0.8) {
       c.carry = n.id; a.stage = 1;
       const ours = c.tribe === T.id, bury = T.members.some(id => NPC.get(id)?.know.bestattung) && (ours || n.tr.mitgefuehl > 0.7);
-      const slot = bury ? graveSlot(T) : null;
+      const slot = bury ? graveSlot(T, n) : null;
       if (slot) { a.tx = slot.x; a.ty = slot.y + 0.6; a.slot = slot; }
       else { const z = warZone(T) + 5, dx = c.x - T.cx, dy = c.y - T.cy, l = Math.hypot(dx, dy) || 1; a.tx = T.cx + dx / l * z; a.ty = T.cy + dy / l * z; if (!passable(a.tx, a.ty) || l > z) { a.tx = c.x + dx / l * 3; a.ty = c.y + dy / l * 3; } }
       if (n.kids.includes(c.id) || n.parents.includes(c.id) || n.partner === c.id) memo(n, `trägt ${c.name} fort`);
@@ -242,7 +242,7 @@ function stepBury(n, T, a) {
   a.wk = 1;
   if (++a.t < 18) return;
   const i = W.corpses.indexOf(c); if (i >= 0) W.corpses.splice(i, 1);
-  W.graves.push({ x: a.slot.x, y: a.slot.y, name: c.name, full: c.full, t: W.tick, tribe: T.id, war: c.war, child: c.child, notable: c.notable, lot: a.slot.lot });
+  W.graves.push({ x: a.slot.x, y: a.slot.y, name: c.name, full: c.full, t: W.tick, tribe: T.id, war: c.war, child: c.child, notable: c.notable, lot: a.slot.lot, slot: a.slot.i });
   if (W.graves.length > 1500) W.graves.shift();
   n.prestige += 1; insightCtx(n, 'grief', 20);
   for (const id of T.members) { const m = NPC.get(id); if (m && (m.kids.includes(c.id) || m.parents.includes(c.id) || m.partner === c.id)) { addRel(m, n, 6); memo(m, `hat ${c.name} beerdigt gesehen`); } }
@@ -252,19 +252,33 @@ function stepBury(n, T, a) {
 
 // ---------------------------------------------------------------- Friedhof: Parzellen am Rand, die wachsen
 const CEM_SLOTS = 8;
-function graveSlot(T) {
+function graveSlot(T, self) {
   if (typeof townOrigin !== 'function') return null;
-  const O = townOrigin(T); let P = null;
+  const O = townOrigin(T);
   const cem = []; for (const k in O.lots) { const L = O.lots[k]; if (L.kind === 'cem' && k === L.i + ',' + L.j) cem.push(L); }
-  P = cem.find(L => (L.used || 0) < CEM_SLOTS) || null;
+  // belegt ist, wo ein Grab liegt oder gerade jemand ein Grab aushebt
+  const taken = new Set();
+  for (const g of W.graves) if (g.tribe === T.id && g.lot) { let u = g.slot; if (u === undefined) { const L = O.lots[g.lot]; if (!L) continue; u = Math.round(g.x - L.x0 - 0.5) + 4 * Math.round((g.y - L.y0 - 0.8) / 2); } taken.add(g.lot + ':' + u); }
+  for (const id of T.members) { const m = NPC.get(id); if (m && m !== self && m.act && m.act.type === 'bury' && m.act.slot) taken.add(m.act.slot.lot + ':' + m.act.slot.i); }
+  const free = L => { for (let u = 0; u < CEM_SLOTS; u++) if (!taken.has(L.i + ',' + L.j + ':' + u)) return u; return -1; };
+  let P = null, u = -1;
+  for (const L of cem) { u = free(L); if (u >= 0) { P = L; break; } }
   if (!P) {
     for (const L of cem) { for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const i = L.i + di, j = L.j + dj; if (!O.lots[i + ',' + j] && lotOK(T, O, i, j)) { P = claimLot(T, O, 'cem', i, j, 1, 1); break; } } if (P) break; }
     if (!P) P = allocLot(T, 'cem', 1, 1, cem.length ? 1 : 2);
     if (P && !cem.length) chron(2, `Die ${T.name} legen einen Totenacker an.`, { tribe: T.id });
+    u = 0;
   }
   if (!P) return null;
-  const u = P.used || 0; P.used = u + 1;
-  return { x: P.x0 + 0.5 + (u % 4), y: P.y0 + 0.8 + Math.floor(u / 4) * 2, lot: P.i + ',' + P.j };
+  P.used = Math.max(P.used || 0, u + 1);
+  return { x: P.x0 + 0.5 + (u % 4), y: P.y0 + 0.8 + Math.floor(u / 4) * 2, lot: P.i + ',' + P.j, i: u };
+}
+// leere Friedhofsparzellen (aus der alten Zählung) wieder freigeben
+function tidyCemeteries(T) {
+  if (!T.town) return;
+  const used = new Set(W.graves.filter(g => g.tribe === T.id && g.lot).map(g => g.lot));
+  for (const id of T.members) { const m = NPC.get(id); if (m && m.act && m.act.type === 'bury' && m.act.slot) used.add(m.act.slot.lot); }
+  for (const k in T.town.lots) { const L = T.town.lots[k]; if (L.kind === 'cem' && k === L.i + ',' + L.j && !used.has(k) && !W.graves.some(g => g.x >= L.x0 && g.x < L.x0 + L.w && g.y >= L.y0 && g.y < L.y0 + L.h)) { delete T.town.lots[k]; T.townVer = (T.townVer || 0) + 1; } }
 }
 // Kacheln mit Gräbern: dort wird nie gebaut
 let GRV = null, GRVK = '';

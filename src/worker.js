@@ -13,23 +13,34 @@ HOOKS.onTerritory = () => { terrDirty = true; };
 const HEAVY = { t: 1, clay: 1, flint: 1, foot: 1, chron: 1, bushes: 1 };
 let lastBf = 0, ROLE = 'main', SRC = null, CORES = 1, SH = null;
 const LINK = 120; // Sippen näher als das gehören in dieselbe Region
+// Für den Bildschirm genügt von jeder Figur, was gezeichnet wird – das volle Innenleben nur für die ausgewählte
+let SEL = 0;
+const NPC_HEAVY = { mem: 1, spots: 1, rel: 1, insight: 1, thr: 1, pv: 1, core: 1, nav: 1, actLog: 1, exp: 1, jx: 1, lw: 1 };
+function slimState(M) {
+  const tp = {}, ttp = new Map();
+  for (const n of M.npcs) { if (!n.insight) continue; let tt = ttp.get(n.tribe); if (!tt) ttp.set(n.tribe, tt = {}); for (const k in n.insight) { if (n.know && n.know[k]) continue; const v = n.insight[k] / ((n.thr && n.thr[k]) || (TECH[k] ? TECH[k].D : 1e9)); if (v > (tp[k] || 0)) tp[k] = v; if (v > (tt[k] || 0)) tt[k] = v; } }
+  const o = Object.assign({}, M); o.tprog = tp;
+  o.tribes = M.tribes.map(T => { const c = Object.assign({}, T); c.tprog = ttp.get(T.id) || {}; if (c.town) { c.town = Object.assign({}, c.town); delete c.town.wall; delete c.town.reach; } return c; });
+  o.npcs = M.npcs.map(n => { if (n.id === SEL) return n; const c = {}; for (const k in n) if (!NPC_HEAVY[k]) c[k] = n[k]; return c; });
+  return o;
+}
 function liteW() { const o = {}; for (const k in W) if (!HEAVY[k]) o[k] = W[k]; return o; }
 function bushF() { const bf = new Uint8Array(W.bushes.length); for (let i = 0; i < bf.length; i++) bf[i] = W.bushes[i].gone ? 255 : Math.max(0, Math.min(254, Math.round(W.bushes[i].f))); return bf; }
 function tileList() { const tiles = []; for (const i of pendingTiles) tiles.push([i, W.t[i], W.cut[i] || 0, W.path[i] || 0, W.flint[i]]); pendingTiles.clear(); return tiles; }
 function sendInit() {
   pendingChron = []; pendingTiles.clear();
-  postMessage({ type: 'init', W: liteW(), t: W.t, clay: W.clay, flint: W.flint, chron: W.chron, own: OWN, bushes: W.bushes.map(b => ({ id: b.id, x: b.x, y: b.y, f: b.f, max: b.max, gone: b.gone })) });
+  postMessage({ type: 'init', W: slimState(liteW()), t: W.t, clay: W.clay, flint: W.flint, chron: W.chron, own: OWN, bushes: W.bushes.map(b => ({ id: b.id, x: b.x, y: b.y, f: b.f, max: b.max, gone: b.gone, k: b.k })) });
   terrDirty = false;
 }
 function sendState() {
   const tiles = tileList();
   let bf = null; const now = performance.now();
   if (now - lastBf > 1500) { lastBf = now; bf = bushF(); }
-  postMessage({ type: 'state', W: liteW(), chron: pendingChron.splice(0), tiles, own: terrDirty ? OWN : null, tps: measured, bf, cores: 1 });
+  postMessage({ type: 'state', W: slimState(liteW()), chron: pendingChron.splice(0), tiles, own: terrDirty ? OWN : null, tps: measured, bf, cores: 1 });
   terrDirty = false;
 }
 function posArrays() {
-  const n = W.npcs, a = W.animals, P = new Float32Array(n.length * 3), A = new Float32Array(a.length * 3);
+  const n = W.npcs, a = W.animals, P = new Float64Array(n.length * 3), A = new Float64Array(a.length * 3);
   for (let i = 0; i < n.length; i++) { P[i * 3] = n[i].id; P[i * 3 + 1] = n[i].x; P[i * 3 + 2] = n[i].y; }
   for (let i = 0; i < a.length; i++) { A[i * 3] = a[i].id; A[i * 3 + 1] = a[i].x; A[i * 3 + 2] = a[i].y; }
   return [P, A];
@@ -71,6 +82,7 @@ function splitWorld(groups) {
     S.graves = FULL.graves.filter(f => owner(f.x, f.y) === s);
     S.corpses = (FULL.corpses || []).filter(f => owner(f.x, f.y) === s);
     S.ghosts = (FULL.ghosts || []).filter(f => owner(f.cx, f.cy) === s);
+    S.ore = (FULL.ore || []).filter(f => owner(f.x, f.y) === s);
     S.paintAll = (FULL.paintAll || []).filter(f => owner(f.x, f.y) === s);
     S.chron = []; S.dead = []; S.stats = [];
     S.nextId = FULL.nextId + s * 50000000;
@@ -82,7 +94,7 @@ function splitWorld(groups) {
 function mergeDumps(strs) {
   const D = strs.map(s => JSON.parse(s)), M = Object.assign({}, D[0]);
   const cat = k => D.flatMap(d => d[k] || []);
-  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'ghosts', 'paintAll']) M[k] = cat(k);
+  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'ghosts', 'ore', 'paintAll']) M[k] = cat(k);
   M.bushes = cat('bushes').sort((a, b) => a.id - b.id);
   M.dead = SH.master.dead.concat(cat('dead'));
   for (const k of ['fields', 'res', 'cut', 'path', 'foot', 'beliefs', 'cults', 'road']) { M[k] = {}; for (const d of D) Object.assign(M[k], d[k] || {}); }
@@ -128,7 +140,7 @@ function onShard(s, m) {
   const R = SH.list.map(x => x.res), ms = performance.now() - SH.t0;
   if (SH.n > 0) { SH.want = clamp(Math.round(SH.n * 22 / Math.max(1, ms)), 1, 400); mTicks += SH.n; }
   const tick = R[0].tick, nP = R.reduce((a, r) => a + r.P.length, 0), nA = R.reduce((a, r) => a + r.A.length, 0);
-  const P = new Float32Array(nP), A = new Float32Array(nA); let o = 0, q = 0; for (const r of R) { P.set(r.P, o); o += r.P.length; A.set(r.A, q); q += r.A.length; }
+  const P = new Float64Array(nP), A = new Float64Array(nA); let o = 0, q = 0; for (const r of R) { P.set(r.P, o); o += r.P.length; A.set(r.A, q); q += r.A.length; }
   postMessage({ type: 'frame', tick, frac: acc % 1, P, A }, [P.buffer, A.buffer]);
   for (const r of R) { for (const e of r.chron) { SH.master.chron.push(e); pendingChron.push(e); } for (const t of r.tiles) { SH.master.t[t[0]] = t[1]; SH.master.flint[t[0]] = t[4]; pendingTiles.add(t); } }
   if (SH.master.chron.length > 6000) SH.master.chron.splice(0, 1000);
@@ -139,7 +151,7 @@ function onShard(s, m) {
 }
 function postMergedState(R, ownDirty) {
   const L = R.map(r => r.lite), M = Object.assign({}, SH.master.meta, L[0]);
-  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'ghosts', 'paintAll', 'dead']) M[k] = L.flatMap(l => l[k] || []);
+  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'ghosts', 'ore', 'paintAll', 'dead']) M[k] = L.flatMap(l => l[k] || []);
   for (const k of ['fields', 'res', 'cut', 'path', 'beliefs', 'cults', 'road']) { M[k] = {}; for (const l of L) Object.assign(M[k], l[k] || {}); }
   M.discovered = {}; for (const l of L) for (const k in l.discovered) if (!M.discovered[k] || l.discovered[k].t < M.discovered[k].t) M.discovered[k] = l.discovered[k];
   // Jahresstatistik: Regionen zusammenzählen
@@ -152,7 +164,7 @@ function postMergedState(R, ownDirty) {
   let own = null; if ((ownDirty || SH.ownPending) && SH.own.length) { SH.ownPending = false; own = new Int32Array(SH.own.find(Boolean).length); for (const o of SH.own) if (o) for (let i = 0; i < own.length; i++) if (o[i]) own[i] = o[i]; }
   let bf = null; if (R[0].bf) { bf = new Uint8Array(SH.bushIdx.reduce((a, x) => a + x.length, 0)); R.forEach((r, s) => { const idx = SH.bushIdx[s]; for (let i = 0; i < idx.length; i++) bf[idx[i]] = r.bf[i]; }); }
   const tiles = [...pendingTiles]; pendingTiles.clear();
-  postMessage({ type: 'state', W: M, chron: pendingChron.splice(0), tiles, own, tps: measured, bf, cores: SH.list.length });
+  postMessage({ type: 'state', W: slimState(M), chron: pendingChron.splice(0), tiles, own, tps: measured, bf, cores: SH.list.length });
 }
 function dumpAll(cb) { SH.dumping = true; SH.dumps = []; SH.onDump = cb; for (const s of SH.list) s.w.postMessage({ cmd: 'dump' }); }
 function waitIdle(fn) { if (!SH || !SH.list.some(s => s.busy)) fn(); else setTimeout(() => waitIdle(fn), 5); }
@@ -192,6 +204,7 @@ function localCmd(m) {
     case 'value': { const n = NPC.get(m.id); if (n && n.pv) { n.pv[m.i] = m.v; if (m.memo) memo(n, m.memo); } return; }
     case 'trait': { const n = NPC.get(m.id); if (n) { n.tr[m.k] = m.v; if (m.memo) memo(n, m.memo); } return; }
     case 'whisper': { const n = NPC.get(m.id); return n ? whisper(n, m.kind) : false; }
+    case 'inspire': { const T = TRIBE.get(m.tribe); if (T) inspireTribe(T, m.k); return; }
     case 'whisperLeader': { const n = NPC.get(m.id); return n ? whisperLeader(n, m.kind, m.target) : 'Diese Person lebt nicht mehr.'; }
     case 'grant': { const T = TRIBE.get(m.tribe); if (T) { for (const id of T.members) { const n = NPC.get(id); if (n) for (const k of m.know) n.know[k] = 1; } updateTribeKnow(T); if (m.bld) T.bld = m.bld; if (m.mud) for (const h of T.huts) h.mud = true; } return; }
     case 'steps': for (let i = 0; i < m.n; i++) stepWorld(); return;
@@ -214,6 +227,7 @@ self.onmessage = e => {
     }
     // ---- als Koordinator
     switch (m.cmd) {
+      case 'sel': SEL = m.id || 0; return;
       case 'src': SRC = m.src; CORES = Math.max(1, Math.min(8, m.cores || 1)); return;
       case 'new': stopShards(); newWorld(m.seed, { pop: m.pop, tribes: m.tribes, size: m.size }); acc = 0; W._yc = 0; sendInit(); decideMode(); return;
       case 'load': stopShards(); deserialize(m.str); acc = 0; W._yc = Math.floor(W.tick / C.TPY); sendInit(); decideMode(); return;

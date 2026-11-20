@@ -208,9 +208,11 @@ function townPerimeter(R) {
 // ---------------------------------------------------------------- Mauerverlauf
 // Palisade und Mauer folgen den bebauten Parzellen (eine Gasse Abstand) statt einem großen Rechteck.
 // Was von außen nicht erreichbar ist, liegt innen. Tore dort, wo die Hauptgassen hinausführen.
+const WALLC = new Map();
 function townWall(T) {
   const O = T.town; if (!O) return null;
   if (O.wall && O.wv === T.townVer) return O.wall;
+  { const c = WALLC.get(T.id); if (c && c.v === T.townVer && c.cx === O.cx && c.cy === O.cy && c.n === Object.keys(O.lots).length) { O.wall = c.w; O.wv = T.townVer; return c.w; } }
   const occ = new Set(); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
   for (const k in O.lots) { const [i, j] = k.split(',').map(Number); const [lx, ly] = lotXY(O, i, j);
     for (let y = ly - 1; y <= ly + LOTW; y++) for (let x = lx - 1; x <= lx + LOTW; x++) { occ.add(y * C.MW + x); if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; } }
@@ -236,6 +238,7 @@ function townWall(T) {
   for (const t of wt) { const x = t[0], y = t[1]; t[2] = set.has(y * C.MW + x - 1) || set.has(y * C.MW + x + 1) ? 'h' : 'v'; }
   wt.sort((a, b) => Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx));
   O.wall = { tiles: wt, gates, out, set, bb }; O.wv = T.townVer;
+  WALLC.set(T.id, { v: T.townVer, cx: O.cx, cy: O.cy, n: Object.keys(O.lots).length, w: O.wall });
   return O.wall;
 }
 function townInside(WL, x, y) { const R = WL.bb; x |= 0; y |= 0; if (x < R.x0 || y < R.y0 || x >= R.x1 || y >= R.y1) return false; const k = y * C.MW + x; return !WL.out.has(k) || false; }

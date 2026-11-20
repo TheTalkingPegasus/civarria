@@ -54,7 +54,7 @@ const NEW_TECH = {
   ochsen:     { cat: 'tiere', name: 'Ochsengespann', icon: '🐃', req: ['rind', 'hakenpflug'], D: 15000, ctx: { farm: 0.6, herd: 0.6 }, cond: T => tHerd(T, 'cattle'), condTxt: 'eigene Rinder', desc: 'Ein Ochse zieht den Pflug. Ein Mensch bestellt nun ein Vielfaches an Land.', eff: 'Ernte +20 %' },
   brennofen:  { cat: 'handwerk', name: 'Brennofen', icon: '🔥', req: ['toepfern', 'lehmziegel'], D: 13000, ctx: { potter: 1, clayfire: 0.5 }, desc: 'Ein geschlossener Ofen wird viel heißer als ein offenes Feuer. Die Töpfe klingen hart.', eff: 'Vorräte verderben 15 % langsamer', build: 'kiln' },
   toepferscheibe: { cat: 'handwerk', name: 'Töpferscheibe', icon: '🏺', req: ['brennofen'], D: 14000, ctx: { potter: 1 }, desc: 'Eine drehende Scheibe formt Gefäße in wenigen Augenblicken.', eff: 'Töpfern 2,5× so schnell, doppelt so viele Töpfe' },
-  kupfer_haemmern: { cat: 'handwerk', name: 'Kupfer hämmern', icon: '🟤', req: ['schmuck', 'steinbeil'], D: 15000, ctx: { stone: 0.6, craft: 0.5 }, desc: 'Ein grünlich schimmernder Stein lässt sich kalt zu Perlen und Ahlen hämmern.', eff: 'Kupferschmuck für Angesehene, wertvolle Tauschware' },
+  kupfer_haemmern: { cat: 'handwerk', name: 'Kupfer hämmern', icon: '🟤', req: ['schmuck', 'steinbeil'], D: 15000, ctx: { stone: 0.6, craft: 0.5, ore: 1.5 }, desc: 'Ein grünlich schimmernder Stein lässt sich kalt zu Perlen und Ahlen hämmern.', eff: 'Kupferschmuck für Angesehene, wertvolle Tauschware' },
   kupfer_guss: { cat: 'handwerk', name: 'Kupfer schmelzen & gießen', icon: '⚒', req: ['kupfer_haemmern', 'brennofen'], D: 22000, ctx: { potter: 0.6, craft: 0.6 }, desc: 'Im heißen Ofen fließt das Erz. In Formen gegossen entstehen Beile, Dolche, Speerspitzen.', eff: 'Kupferwaffen und -werkzeug' },
   pferd:      { cat: 'tiere', name: 'Pferdezucht', icon: '🐎', req: ['viehzucht', 'esel'], D: 14000, ctx: { horsenear: 1.4, herd: 0.5 }, desc: 'Wildpferde werden eingefangen, gezähmt und schließlich geritten. Wer reitet, ist doppelt so schnell.', eff: 'Kundschafter, Boten, Händler und Krieger reiten – fast doppelt so schnell; Pferde im Gehege' },
   esel:       { cat: 'tiere', name: 'Esel als Lasttier', icon: '🫏', req: ['viehzucht'], D: 13000, ctx: { donkeynear: 1, trade: 0.4 }, desc: 'Der genügsame Wildesel trägt schwere Lasten über weite Strecken.', eff: 'Handel reicht weiter' },
@@ -124,7 +124,7 @@ function yieldMul(T, src) {
   if (src === 'gather') m *= (TK(T, 'mahlstein') ? 1.15 : 1) * (TK(T, 'sichel') ? 1.1 : 1) * (TK(T, 'wagen') ? 1.1 : 1);
   else if (src === 'fish' || src === 'trap') m *= (TK(T, 'netz') ? 1.35 : 1) * (TK(T, 'einbaum') ? 1.2 : 1) * (TK(T, 'segelboot') ? 1.1 : 1);
   else if (src === 'farm') m *= (TK(T, 'saatgut') ? 1.3 : 1) * (TK(T, 'huelsen') ? 1.15 : 1) * (TK(T, 'bewaesserung') && tRiverFields(T) ? 1.5 : 1) * (TK(T, 'hakenpflug') ? 1.25 : 1) * (TK(T, 'ochsen') ? 1.2 : 1) * (TK(T, 'dattel') ? 1.1 : 1) * (TK(T, 'kalender') ? 1.1 : 1) * (TK(T, 'backofen') ? 1.1 : 1);
-  else if (src === 'hunt') m *= TK(T, 'kupfer_guss') ? 1.1 : 1;
+  else if (src === 'hunt') m *= hasCopper(T) ? 1.1 : 1;
   return m;
 }
 const spoilMul = T => (TK(T, 'vorratsgrube') ? 0.8 : 1) * (TK(T, 'brennofen') ? 0.85 : 1) * (TK(T, 'rationen') ? 0.8 : 1) * (TK(T, 'tempelwirtschaft') ? 0.9 : 1);
@@ -142,7 +142,7 @@ function buildWants(T) {
 // Tägliche Wirkungen des Wissens
 function techDaily(T) {
   updateTribeKnow(T);
-  if (TK(T, 'kupfer_haemmern') && rnd() < 0.05) for (const id of T.members) { const m = NPC.get(id); if (m && m.prestige > 30 && !m.copper) { m.copper = 1; m.prestige += 5; memo(m, 'trägt nun Kupferschmuck'); } }
+  if (TK(T, 'kupfer_haemmern') && (T.store.ore || 0) >= 1 && rnd() < 0.05) for (const id of T.members) { const m = NPC.get(id); if (m && m.prestige > 30 && !m.copper && (T.store.ore || 0) >= 1) { T.store.ore -= 1; m.copper = 1; m.prestige += 5; memo(m, 'trägt nun Kupferschmuck'); } }
   const herd = {}; for (const a of W.animals) if (a.tribe === T.id && HERD_K[a.k]) herd[a.k] = (herd[a.k] || 0) + 1;
   T.tc = { settled: tribeFields(T).length >= 3 || !!T.storehouse, contacts: Object.keys(T.rel).filter(k => TRIBE.get(+k)?.alive).length, river: riverFields(T), herd };
   // Schrift: Wer lesen kann, vergisst nichts – Junge lernen aus den Tafeln

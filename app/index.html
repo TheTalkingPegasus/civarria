@@ -9482,8 +9482,9 @@ function frame(t) {
   if (!SIM.ready || !W) { requestAnimationFrame(frame); return; }
   ALPHA = SIM.cur ? Math.min(1, SIM.cur.frac + (ui.speed ? (performance.now() - SIM.lastFrameT) / 1000 * TPS * SPEEDS[ui.speed] : 0)) : 1;
   if (cam.follow) { const n = NPC.get(cam.follow); if (n) { const [x, y] = lerpPos(n); cam.x += (x * TS - cam.x) * 0.15; cam.y += (y * TS - cam.y) * 0.15; } else cam.follow = 0; }
-  draw(t);
-  if (t - ui.lastInspect > 400) { ui.lastInspect = t; updateTop(); refreshInspector(); if (ui.tab === 'tribes' || ui.tab === 'tech' || ui.tab === 'stats') renderSide(false); }
+  const t0 = performance.now(); draw(t); const t1 = performance.now(); PERF.note('draw', t1 - t0);
+  if (t - ui.lastInspect > 400) { ui.lastInspect = t; updateTop(); refreshInspector(); if (ui.tab === 'tribes' || ui.tab === 'tech' || ui.tab === 'stats') renderSide(false); PERF.note('panel', performance.now() - t1); }
+  PERF.frame(t);
   requestAnimationFrame(frame);
 }
 function setSpeed(i) { ui.speed = i; if (SIM.worker) simCmd('speed', { tps: TPS * SPEEDS[i] }); document.querySelectorAll('#speeds button').forEach((b, k) => b.classList.toggle('on', k === i)); }
@@ -9562,7 +9563,8 @@ function renderSide(full = true) {
       <div class="sec"><div class="t">Anzeige</div>
       <label class="cb"><input type="checkbox" id="pod" ${ui.pauseOnDiscovery ? 'checked' : ''}> Bei Erstentdeckungen anhalten</label>
       <label class="cb"><input type="checkbox" id="lbl" ${ui.labels ? 'checked' : ''}> Namen anzeigen (nah herangezoomt)</label>
-      <label class="cb"><input type="checkbox" id="ter" ${ui.territory ? 'checked' : ''}> Reviere anzeigen</label></div>
+      <label class="cb"><input type="checkbox" id="ter" ${ui.territory ? 'checked' : ''}> Reviere anzeigen</label>
+      <label class="cb"><input type="checkbox" id="fpson" ${PERF.on ? 'checked' : ''}> FPS-Anzeige (Taste F)</label></div>
       <div class="sec"><div class="t">Speichern</div>
       <div class="row"><button id="sv">Speichern</button><button id="ld">Laden</button><button id="ex">Als Datei exportieren</button><button id="im">Datei importieren</button></div><div class="small" id="svmsg"></div>
       <input type="file" id="imf" accept=".json" style="display:none"></div>
@@ -9578,6 +9580,7 @@ function renderSide(full = true) {
     $('pod').onchange = e => ui.pauseOnDiscovery = e.target.checked;
     $('lbl').onchange = e => ui.labels = e.target.checked;
     $('ter').onchange = e => ui.territory = e.target.checked;
+    $('fpson').onchange = e => PERF.toggle(e.target.checked);
     $('sv').onclick = () => simAsk('save').then(str => saveGame('autosave', str).then(ok => { $('svmsg').textContent = ok ? 'Gespeichert (' + dateStr(W.tick) + ').' : 'Speichern nicht möglich. Nutze „Als Datei exportieren“.'; }));
     $('ld').onclick = () => loadGame('autosave').then(s => { if (!s) { $('svmsg').textContent = 'Kein Spielstand gefunden.'; return; } loadWorld(s); $('svmsg').textContent = 'Geladen.'; });
     $('ex').onclick = async () => {
@@ -9791,6 +9794,7 @@ const keys = {};
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
   keys[e.key.toLowerCase()] = true;
+  if (e.key === 'f' || e.key === 'F') PERF.toggle();
   if (e.key === ' ') { e.preventDefault(); setSpeed(ui.speed ? 0 : (ui.prevSpeed || 1)); if (ui.speed === 0) {} }
   if (e.key >= '1' && e.key <= '6') { ui.prevSpeed = +e.key; setSpeed(+e.key); }
   if (e.key === 'Escape') closeInspector();
@@ -9826,7 +9830,7 @@ function simStart() {
     SIM.worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     SIM.worker.onerror = e => { console.error('Simulation:', e.message); if (!SIM.ready) simInline(src); };
   } catch (err) { simInline(src); return; }
-  SIM.worker.onmessage = onSim;
+  SIM.worker.onmessage = e => { const t0 = performance.now(); onSim(e); if (e.data && e.data.type === 'state') PERF.note('state', performance.now() - t0); };
   SIM.worker.postMessage({ cmd: 'src', src, cores: Math.min(8, Math.max(1, (navigator.hardwareConcurrency || 4) - 2)) });
   setTimeout(() => { if (!SIM.ready && !SIM.inline) simInline(src); }, 6000);
 }
@@ -10261,6 +10265,46 @@ function drawOre(o) {
   ctx.fillStyle = '#c8783a'; ctx.fillRect(X + 4, Y + 1, 3, 2); ctx.fillRect(X - 7, Y - 1, 2, 2);
   if (Math.floor(FT * 1.5 + o.id) % 6 === 0) { ctx.fillStyle = '#e8fff0'; ctx.fillRect(X - 2, Y - 8, 1, 3); ctx.fillRect(X - 3, Y - 7, 3, 1); } // Glitzern
 }
+
+// =====================================================================
+//  FPS-Anzeige: Bilder pro Sekunde, Bildzeiten, wo die Zeit hingeht
+// =====================================================================
+const PERF = {
+  on: (() => { try { return localStorage.getItem('civ.fps') === '1'; } catch (e) { return false; } })(),
+  last: 0, times: [], acc: { draw: [], panel: [], state: [] }, el: null, cv: null, upd: 0, worst: 0,
+  note(k, ms) { if (!this.on) return; const a = this.acc[k]; a.push(ms); if (a.length > 120) a.shift(); },
+  toggle(v) { this.on = v === undefined ? !this.on : v; try { localStorage.setItem('civ.fps', this.on ? '1' : '0'); } catch (e) {} if (this.el) this.el.style.display = this.on ? 'block' : 'none'; const cb = document.getElementById('fpson'); if (cb) cb.checked = this.on; this.times = []; this.worst = 0; },
+  frame(t) {
+    if (!this.on) { if (this.el) this.el.style.display = 'none'; return; }
+    if (!this.el) {
+      const d = document.createElement('div'); d.id = 'fpsbox';
+      d.style.cssText = 'position:fixed;left:8px;top:44px;z-index:8;background:#0c1218e6;border:1px solid #3a4a5a;border-radius:6px;padding:6px 8px;font:11px/1.35 ui-monospace,Consolas,monospace;color:#cfe;pointer-events:none;min-width:190px';
+      d.innerHTML = '<div id="fpstx"></div><canvas id="fpscv" width="190" height="44" style="display:block;margin-top:4px"></canvas>';
+      document.body.appendChild(d); this.el = d; this.cv = d.querySelector('canvas');
+    }
+    this.el.style.display = 'block';
+    if (this.last) { const dt = t - this.last; this.times.push(dt); if (this.times.length > 180) this.times.shift(); if (dt > this.worst) this.worst = dt; }
+    this.last = t;
+    if (t - this.upd < 250) return; this.upd = t;
+    const T = this.times; if (!T.length) return;
+    const avg = T.reduce((a, b) => a + b, 0) / T.length, sorted = [...T].sort((a, b) => b - a), low1 = sorted[Math.max(0, Math.floor(T.length * 0.01))];
+    const m = k => { const a = this.acc[k]; return a.length ? (a.reduce((x, y) => x + y, 0) / a.length).toFixed(1) : '–'; };
+    const mx = k => { const a = this.acc[k]; return a.length ? Math.max(...a).toFixed(0) : '–'; };
+    const fps = 1000 / avg, col = fps >= 50 ? '#7fdc8a' : fps >= 30 ? '#e8c860' : '#f07060';
+    const want = TPS * SPEEDS[ui.speed];
+    document.getElementById('fpstx').innerHTML =
+      `<b style="color:${col};font-size:13px">${fps.toFixed(0)} FPS</b> <span style="color:#9ab">Ø ${avg.toFixed(1)} ms · langsamste ${low1.toFixed(0)} ms</span><br>` +
+      `Zeichnen: ${m('draw')} ms (max ${mx('draw')})<br>Fenster: ${m('panel')} ms (max ${mx('panel')})<br>Weltdaten: ${m('state')} ms (max ${mx('state')})<br>` +
+      `Simulation: ${Math.round(SIM.tps || 0)} / ${Math.round(want)} Schritte/s${SIM.cores > 1 ? ` · ${SIM.cores} Kerne` : ''}<br>` +
+      `${W ? W.npcs.length : 0} Menschen · ${W ? W.animals.length : 0} Tiere · Zoom ${cam.z.toFixed(2)}`;
+    // Verlauf der Bildzeiten: grün = flüssig, gelb = unter 30 FPS, rot = Ruckler
+    const g = this.cv.getContext('2d'), Wd = this.cv.width, H = this.cv.height; g.clearRect(0, 0, Wd, H);
+    const y = ms => H - Math.min(H, ms / 66 * H);
+    g.fillStyle = 'rgba(255,255,255,.08)'; g.fillRect(0, y(16.7), Wd, 1); g.fillRect(0, y(33.3), Wd, 1);
+    const n = T.length, w = Wd / 180;
+    for (let i = 0; i < n; i++) { const v = T[i]; g.fillStyle = v <= 20 ? '#4caf6a' : v <= 34 ? '#d8b040' : '#e05a4a'; g.fillRect(Wd - (n - i) * w, y(v), Math.max(1, w - 0.2), H - y(v)); }
+  },
+};
 
 </script>
 </body>

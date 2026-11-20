@@ -167,6 +167,7 @@ function techDaily(T) {
 // Die Bauten im Lager
 function placeBuild(T, b) {
   // Werkhof (Backofen + Brennofen teilen sich eine Parzelle), Tempel auf vier Parzellen
+  if (b === 'hall') { const O = townOrigin(T); let P = Object.values(O.lots).find(L => L.kind === 'hall'); if (!P) P = allocLot(T, 'hall', 2, 1); if (!P) return null; return [P.x0 + 1 + ((T.bld?.hall || 0) % 5) * 1.6, P.y0 + P.h + 0.5]; }
   if (b !== 'oven' && b !== 'kiln' && b !== 'temple') return null;
   const O = townOrigin(T), kind = b === 'temple' ? 'temple' : 'werk';
   let P = Object.values(O.lots).find(L => L.kind === kind);

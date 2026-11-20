@@ -484,6 +484,7 @@ function moveStep(e, tx, ty, speed) {
   const ti = (e.y | 0) * C.MW + (e.x | 0);
   let cost = MOVE_COST[W.t[ti]] || 0.5; const pl = W.path[ti];
   if (pl) cost = Math.max(cost, 0.85) * (1 + 0.15 * pl);
+  { const rl = W.road && W.road[ti]; if (rl) cost = Math.max(cost, 1) * (1.25 + 0.1 * rl); }
   if (e.know && (W.tick + e.id) % 3 === 0 && W.t[ti] >= T_SHORE) footstep(ti);
   const step = Math.min(d, speed * cost);
   const qx = e.x + dx / d * step, qy = e.y + dy / d * step;
@@ -524,7 +525,7 @@ function flowFor(T) {
       const j = ny * MW + nx, gj = G(nx, ny), t = W.t[gj];
       if (t === T_DEEP || (!raft && t === T_SHALLOW)) continue;
       if (dx && dy && (W.t[G(nx, y)] <= (raft ? T_DEEP : T_SHALLOW) || W.t[G(x, ny)] <= (raft ? T_DEEP : T_SHALLOW))) continue;
-      let c = TILE_COST[t]; const pl = W.path[gj]; if (W.hutVer) { if (WMAP && WMAP.has(gj)) continue; const hh = houseAt(gj % C.MW, (gj / C.MW) | 0); if (hh) { const hx = gj % C.MW, hy = (gj / C.MW) | 0; if (!(hx === hh.lx + 2 && hy === hh.ly + hh.h - 1)) continue; c *= 3; } } if (pl) c = Math.max(6, Math.round(c / (1 + 0.3 * pl)));
+      let c = TILE_COST[t]; const pl = W.path[gj]; if (W.hutVer) { if (WMAP && WMAP.has(gj)) continue; const hh = houseAt(gj % C.MW, (gj / C.MW) | 0); if (hh) { const hx = gj % C.MW, hy = (gj / C.MW) | 0; if (!(hx === hh.lx + 2 && hy === hh.ly + hh.h - 1)) continue; c *= 3; } } if (pl) c = Math.max(6, Math.round(c / (1 + 0.3 * pl))); if (W.road && W.road[gj]) c = 5;
       if (dx && dy) c = Math.round(c * 1.41);
       const nd = d[i] + c; if (nd < d[j] && hn < N * 4 - 1) { d[j] = nd; push(j, nd); }
     }
@@ -770,7 +771,7 @@ function decide(n) {
       if (n.know.flechten && n.tools.korb <= 0) add('craft', 0.4, { what: 'korb' });
       if (n.know.bogen && !(n.tools.bogen > 0) && age >= 14) add('craft', 0.55 + tr.mut * 0.3, { what: 'bogen' });
       if (n.know.toepfern && T.pots < pop / 3 && T.fire.lit) add('craft', 0.35 + tr.geschick * 0.3, { what: 'topf' });
-      if (n.know.huette && age >= 15 && busyBuilders(T) < 1 + Math.floor(pop / 10)) { const site = T.town && Object.values(T.town.lots).some(L => L.kind === 'bau' && lotFree(L, n)), furn = T.huts.some(h => h.furn !== undefined && h.furn < FURN_MAX); if (T.huts.length < Math.ceil(pop / 6) || site || (n.know.steinbau && T.huts.some(h => !h.stone))) add('build', 0.45 + (season >= 2 ? 0.4 : 0) + tr.mitgefuehl * 0.2 + (site ? 0.25 : 0)); else if (furn) add('build', 0.3 + tr.geschick * 0.2); }
+      if (n.know.huette && age >= 15 && busyBuilders(T) < 1 + Math.floor(pop / 10)) { const site = T.town && Object.values(T.town.lots).some(L => L.kind === 'bau' && lotFree(L, n)), furn = T.huts.some(h => (h.furn !== undefined && h.furn < FURN_MAX) || h.worn); if (T.huts.length < Math.ceil(pop / 6) || site || (n.know.steinbau && T.huts.some(h => !h.stone))) add('build', 0.45 + (season >= 2 ? 0.4 : 0) + tr.mitgefuehl * 0.2 + (site ? 0.25 : 0)); else if (furn) add('build', 0.3 + tr.geschick * 0.2); }
     }
     // Sesshaftigkeit: Felder, Vieh, Reusen, Bauten
     if (age >= 13 && n.know.ackerbau) { const fw = fieldWork(T); if (fw) add('farm', provNeed * 0.9 + 0.35 + (season === 2 ? 0.4 : 0)); }
@@ -778,6 +779,8 @@ function decide(n) {
     if (age >= 13 && n.know.reusen && (T.traps || []).length < 3 && season !== 3) add('trap', 0.45);
     if (age >= 15 && n.know.huette && !T.storehouse && T.huts.length >= 2) add('construct', 0.55 + tr.mitgefuehl * 0.3, { what: 'store' });
     if (age >= 15) for (const b of buildWants(T)) add('construct', (b === 'wall' ? 0.3 : 0.4) + tr.mitgefuehl * 0.15 + (b === 'temple' ? tr.fromm * 0.3 : 0), { what: b });
+    if (age >= 15 && T.roadQ && T.roadQ.length && TK(T, 'wegebau')) add('road', 0.3 + tr.mitgefuehl * 0.15 + tr.geschick * 0.1);
+    if (age >= 25 && hallDone(T) && (T.leader === n.id || n.prestige > 18 || age > 50) && !night && rnd() < 0.5) add('council', 0.35 + n.tr.gesellig * 0.3 + (T.leader === n.id ? 0.2 : 0));
     if (age >= 15 && n.know.palisade && (T.pal || 0) < 24 && !((T.bld?.wall || 0) > 0)) add('construct', 0.35 + tr.mitgefuehl * 0.2 + (W.tick - (T.lastRaided || -1e9) < C.TPY * 2 ? 0.7 : 0), { what: 'pal' });
     // Besuch bei befreundeten Nachbarn
     if (age >= 16 && season !== 3 && tr.gesellig > 0.45 && rnd() < 0.3) { const F = W.tribes.find(o => o.alive && o !== T && (T.rel[o.id] ?? -99) > 12 && dist(o.cx, o.cy, T.cx, T.cy) < 90 && reachable(T, o.cx, o.cy)); if (F) add('visit', tr.gesellig * 0.35 + (n.partner ? 0 : 0.15) - provNeed * 0.2, { target: F.id }); }
@@ -897,6 +900,7 @@ function startAct(n, o) {
     case 'theft': { a.victim = o.victim; break; }
     case 'defend': case 'hide': case 'down': { a.raid = o.raid; a.tx = n.x; a.ty = n.y; break; }
     case 'bury': { a.corpse = o.corpse; break; }
+    case 'council': case 'road': break;
     case 'farm': { const f = fieldWork(T); if (!f) { a.t = 99; break; } a.fi = f.i; a.job = f.job; a.tx = (f.i % C.MW) + 0.5; a.ty = ((f.i / C.MW) | 0) + 0.5; break; }
     case 'herd': { let best = null, bd = 40; for (const g of W.animals) if (HERD_K[g.k] && !g.tribe && n.know[HERD_K[g.k]]) { const d = dist(g.x, g.y, T.cx, T.cy); if (d < bd && reachable(T, g.x, g.y)) { bd = d; best = g; } } if (!best) { a.t = 99; break; } a.goat = best.id; a.tx = best.x; a.ty = best.y; break; }
     case 'trap': { const shore = (x, y) => W.t[y * C.MW + x] >= T_SHORE && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => W.t[(y + dy) * C.MW + x + dx] === T_SHALLOW) && reachable(T, x, y); const p = nearestTile(T.cx, T.cy, 16, shore) || nearestTile(T.cx, T.cy, 30, shore); if (!p) { a.t = 99; T.noTrap = W.tick; break; } a.tx = p[0]; a.ty = p[1]; break; }
@@ -1073,6 +1077,8 @@ function stepNpc(n) {
     case 'hide': stepHide(n, T, a); break;
     case 'down': stepDown(n, T, a); break;
     case 'bury': stepBury(n, T, a); break;
+    case 'council': stepCouncil(n, T, a); break;
+    case 'road': stepRoad(n, T, a); break;
     case 'watch': stepWatch(n, a); break;
     case 'farm': stepFarm(n, T, a, at); break;
     case 'herd': stepHerd(n, T, a); break;
@@ -1384,7 +1390,8 @@ function stepBuild(n, T, a, at) {
   const O = townOrigin(T);
   if (a.stage === 0) {
     let P = a.lot ? O.lots[a.lot] : null;
-    if (!P && !a.furnish) {
+    if (!P && !a.furnish && !a.repair) { const hw = T.huts.find(h => h.worn && h.lx !== undefined && (!h.fb || h.fb === n.id || !NPC.get(h.fb))); if (hw) { hw.fb = n.id; a.repair = hw.lot; } }
+    if (!P && !a.furnish && !a.repair) {
       // Einrichtung fehlt in einem fertigen Haus?
       const hf = T.huts.find(h => h.lx !== undefined && h.furn !== undefined && h.furn < FURN_MAX && (!h.fb || h.fb === n.id || !NPC.get(h.fb)));
       const enough = T.huts.length >= Math.ceil(T.members.length / 6) && !Object.values(O.lots).some(L => L.kind === 'bau' && lotFree(L, n));
@@ -1399,7 +1406,7 @@ function stepBuild(n, T, a, at) {
     }
     // Material besorgen
     const replacing = !!a.lot && T.huts.some(h => h.lot === a.lot);
-    const need = a.furnish ? { wood: 1, stone: 0 } : hutNeeds(T, P, stoneHut, replacing);
+    const need = a.repair ? { wood: 2, stone: 0 } : a.furnish ? { wood: 1, stone: 0 } : hutNeeds(T, P, stoneHut, replacing);
     if (n.inv.stone + T.store.stone < need.stone) {
       let p = null;
       if (T.quarry) { const [qx, qy] = T.quarry; if (W.t[(qy | 0) * C.MW + (qx | 0)] >= T_HILLS) p = T.quarry; else { // Steinbruch wandert weiter
@@ -1414,6 +1421,7 @@ function stepBuild(n, T, a, at) {
       if (!p) { n.act = null; return; }
       a.tree = treeOf(p); [a.tx, a.ty] = besideTile(p); a.stage = 1; a.t = 0; return;
     }
+    if (a.repair) { const h = T.huts.find(h => h.lot === a.repair); if (!h) { n.act = null; return; } a.tx = h.lx + 2.5; a.ty = h.ly + h.h + 0.4; a.stage = 7; a.t = 0; return; }
     if (a.furnish) { const h = T.huts.find(h => h.lot === a.furnish); if (!h) { n.act = null; return; } const B = bedsOf(h), b = B[Math.min(B.length - 1, Math.max(0, (h.furn || 0) - 1))]; a.tx = b[0]; a.ty = b[1]; a.stage = 6; a.t = 0; return; }
     if (!P) { n.act = null; return; }
     [a.tx, a.ty] = replacing ? [P.cx, P.cy + 1.5] : sitePos(P, P.prog || 0);
@@ -1439,6 +1447,14 @@ function stepBuild(n, T, a, at) {
     const w = Math.min(1, n.inv.wood); n.inv.wood -= w; T.store.wood = Math.max(0, T.store.wood - (1 - w));
     h.furn = Math.min(FURN_MAX, (h.furn || 0) + 1); h.fb = 0; insightCtx(n, 'build', 0.3);
     n.act = null; return;
+  }
+  // Ausbessern: Dach flicken, Wände verstärken
+  if (a.stage === 7) {
+    const h = T.huts.find(h => h.lot === a.repair); if (!h) { n.act = null; return; }
+    if (a.t < 999) { if (moveToward(n, a.tx, a.ty, 1) || dist(n.x, n.y, a.tx, a.ty) < 0.7) a.t = 999; else if (++a.t > 300) { n.act = null; } return; }
+    a.wk = 1; if (++a.t < 999 + 14) return;
+    const w = Math.min(2, n.inv.wood); n.inv.wood -= w; T.store.wood = Math.max(0, T.store.wood - (2 - w));
+    h.worn = 0; h.fb = 0; n.act = null; return;
   }
   // stage 3: am Bauplatz arbeiten
   const P = O.lots[a.lot];
@@ -1470,7 +1486,7 @@ function stepBuild(n, T, a, at) {
   if (P.prog < HUT_STEPS) { a.wk = 0; if (rnd() < 0.5 || n.hunger > 50) { P.busy = 0; n.act = null; } else a.stage = 0; return; } // nächster Schritt – oder erst einmal etwas anderes tun
   // fertig
   P.busy = 0; P.kind = 'house'; delete P.prog;
-  T.huts.push(houseFromLot(P, { by: P.by || n.name, t: W.tick, stone: P.stone, mud: P.mud, furn: 0 })); W.hutVer = (W.hutVer || 0) + 1;
+  T.huts.push(houseFromLot(P, { by: P.by || n.name, t: W.tick, stone: P.stone, mud: P.mud, furn: P.prog0 ? 2 : 0 })); W.hutVer = (W.hutVer || 0) + 1;
   insightCtx(n, 'build', 1);
   if (stoneHut && T.huts.filter(h => h.stone).length === 1) chron(2, `${n.name} errichtet das erste Steinhaus der ${T.name}.`, { npc: n.id, tribe: T.id });
   else if (T.huts.length === 1) chron(2, `${n.name} errichtet die erste Hütte der ${T.name}.`, { npc: n.id, tribe: T.id });
@@ -1853,8 +1869,8 @@ function stepDiplo(n, T, a, at) {
   if (!O || !O.alive) { n.act = null; return; }
   if (a.stage === 0) {
     if (!a.announced) { a.announced = 1; chron(1, `${fullName(n)}, Oberhaupt der ${T.name}, bricht zu den ${O.name} auf, ${DIPLO_TXT[a.kind]}.`, { tribe: T.id, npc: n.id }); }
-    a.tx = O.cx; a.ty = O.cy;
-    if (dist(n.x, n.y, O.cx, O.cy) < 3.5) { a.stage = 1; a.t = 0; return; }
+    const HS = hallDone(O) ? hallSeat(O, 3) : null; a.tx = HS ? HS[0] : O.cx; a.ty = HS ? HS[1] : O.cy;
+    if (dist(n.x, n.y, a.tx, a.ty) < (HS ? 1 : 3.5)) { a.stage = 1; a.t = 0; if (HS && !a.hallMsg) { a.hallMsg = 1; chron(1, `${n.name} wird im Haupthaus der ${O.name} empfangen.`, { tribe: O.id, npc: n.id }); } return; }
     if (!moveVia(n, O, a.tx, a.ty, 1) && ++a.t > 400) n.act = null;
     return;
   }
@@ -1971,7 +1987,9 @@ function resolveConquest(R) {
     if (cvOf(T, 'unfreiheit') > 0.35) for (const m of rest) if (ageY(m) >= 12 && rnd() < 0.5 + cvOf(T, 'unfreiheit') * 0.4 && m.id !== E.leader) m.unfrei = { t: W.tick, from: E.id };
     for (const m of rest) { nudge(m, 'freiheit', 0.08); nudge(m, 'rache', 0.05); }
     nudgeTribe(T, 'krieger', 0.04); nudgeTribe(T, 'ruhm', 0.03); nudgeTribe(T, 'gleichheit', -0.03);
-    if (rest.length) moveMembers(rest, E, T, `wurde von den ${T.name} unterworfen`);
+    let held = null;
+    if (rest.length >= 8 && E.town && E.huts.length >= 2) held = holdConquered(T, E, rest, raiders);
+    if (!held && rest.length) moveMembers(rest, E, T, `wurde von den ${T.name} unterworfen`);
     if (E.alive) { E.alive = false; E.died = W.tick; }
     const L = NPC.get(T.leader); if (L) { L.prestige += 30; L.notable = true; memo(L, `hat die ${E.name} unterworfen`); }
     chron(3, `Eroberung! Die ${T.name} besiegen die ${E.name}${LE && LE.alive !== false ? ` – ${LE.name} ${fled && LE.tribe !== T.id ? 'flieht' : 'beugt sich'}` : ''}. ${rest.length} Menschen werden Teil der ${T.name}${fled ? `, ${fled} fliehen zu den ${flee.name}` : ''}. Das Land der ${E.name} gehört nun den Siegern.`, { tribe: T.id, npc: L?.id });
@@ -2071,11 +2089,13 @@ function foundTribe(founder, followers, reason) {
     if (!reachable(O, x, y)) continue;
     let s = bushesNear(x, y, 10).reduce((a, b) => a + b.max, 0);
     const w = nearestTile(x, y, 6, (tx, ty) => W.t[ty * C.MW + tx] <= T_SHALLOW); if (w) s += 30;
+    if (W.ghosts && ghostsNear(x, y, 10).length) s += 80; // verlassene Häuser locken
     if (s > bs) { bs = s; best = [x, y]; }
   }
   if (!best) return null;
   const T = makeTribe(best[0], best[1], O);
   T.fire.lit = O.fire.lit; T.fire.fuel = 30;
+  { const G = (W.ghosts ? ghostsNear(T.cx, T.cy, 12) : [])[0]; if (G && !W.tribes.some(X => X.alive && X !== T && dist(X.cx, X.cy, G.cx, G.cy) < 15)) T.adoptG = G; }
   const share = Math.floor(O.store.food * followers.length / Math.max(1, O.members.length)); O.store.food -= share; T.store.food += share;
   for (const m of [founder, ...followers]) {
     const i = O.members.indexOf(m.id); if (i >= 0) O.members.splice(i, 1);
@@ -2089,6 +2109,7 @@ function foundTribe(founder, followers, reason) {
   if (reason !== 'werte') chron(3, `${fullName(founder)} verlässt mit ${followers.length} Gefährten die ${O.name}${reason === 'streit' ? ' im Streit' : reason === 'kult' ? ' – gemeinsam mit den Anhängern des neuen Glaubens' : ''} und gründet die Sippe der ${T.name}.`, { npc: founder.id, tribe: T.id });
   if (!O.members.length && O.alive) { O.alive = false; chron(3, `Die ${O.name} existieren nicht mehr – alle sind fortgezogen.`, { tribe: O.id }); }
   if (O.leader === founder.id || !NPC.get(O.leader) || NPC.get(O.leader).tribe !== O.id) { O.leader = 0; chooseLeader(O); }
+  if (T.adoptG) { const G = T.adoptG; delete T.adoptG; adoptGhost(T, G); }
   return T;
 }
 function gatherFollowers(founder, fraction, filter) {
@@ -2276,9 +2297,12 @@ function relocate(T, pop) {
     if (s > bs * 1.3) { bs = s; best = [x, y]; }
   }
   if (!best) return;
+  abandonTown(T, 'fort'); const G0 = ghostsNear(best[0], best[1], 14).find(G => G.id !== T.id);
   T.cx = best[0]; T.cy = best[1]; T.moved = W.tick; T.huts = []; T.town = null; T.penR = null; T.bld = null; T.bpos = null; W.hutVer = (W.hutVer || 0) + 1; T.cem = null; T.quarry = null; T.storehouse = null; T.pal = 0; T.pen = null; T.traps = [];
+  T.ghosted = 0;
   for (const id of T.members) { const m = NPC.get(id); if (m) m.act = null; }
   chron(2, `Das Land gibt nicht mehr genug her: Die ${T.name} ziehen weiter und schlagen ein neues Lager auf.`, { tribe: T.id });
+  if (G0) adoptGhost(T, G0);
 }
 function startCult(c, forced) {
   const T = tribeOf(c);
@@ -2338,7 +2362,7 @@ function stepAnimals() {
 }
 function dailyTick() {
   const day = dayNum(), season = seasonNow(), dayOfYear = day % C.DPY;
-  corpseDaily();
+  corpseDaily(); villageDaily();
   // Büsche wachsen
   const grow = [1.4, 2, 3.2, 0][season];
   for (const b of W.bushes) b.f = Math.min(b.max, b.f + Math.floor(grow) + (rnd() < grow % 1 ? 1 : 0));
@@ -2348,8 +2372,7 @@ function dailyTick() {
     const spoil = (T.storehouse ? 0.45 : 1) * (season === 3 ? 0.004 : 0.008) * (T.huts.length >= T.members.length / 8 ? 0.6 : 1) * (T.pots > 0 ? Math.max(0.3, 1 - T.pots / Math.max(1, T.members.length) * 1.5) : 1);
     T.store.food = Math.max(0, T.store.food * (1 - spoil * spoilMul(T)));
     if (T.fire.lit) { T.fire.fuel -= season === 3 ? (W.hardWinter ? 9 : 7) : 5; if (T.fire.fuel <= 0 && T.store.wood > 0) { const w = Math.min(T.store.wood, 10); T.store.wood -= w; T.fire.fuel += w * 4; } if (T.fire.fuel <= -15) { T.fire.lit = false; T.fire.fuel = 0; T.fireLostT = W.tick; chron(tribeKnows(T, 'feuer_machen') ? 2 : 3, `Das Feuer der ${T.name} ist erloschen!${tribeKnows(T, 'feuer_machen') ? '' : ' Niemand dort weiß, wie man es neu entfacht.'}`, { tribe: T.id }); } }
-    // Hütten verfallen
-    for (let i = T.huts.length - 1; i >= 0; i--) if (!T.huts[i].stone && !T.huts[i].mud && rnd() < 0.0008) { const h = T.huts.splice(i, 1)[0]; if (T.town && T.town.lots[h.lot]) T.town.lots[h.lot].kind = 'bau'; W.hutVer = (W.hutVer || 0) + 1; }
+    // Hütten nutzen sich ab: siehe villageDaily
   }
   if (dayOfYear === SEASON_LEN[0] + SEASON_LEN[1] + SEASON_LEN[2]) {
     W.hardWinter = rnd() < 0.22;
@@ -2528,7 +2551,7 @@ function serialize() {
 function deserialize(str) {
   W = JSON.parse(str);
   for (const k of ['t', 'clay', 'flint']) if (typeof W[k] === 'string') W[k] = Array.from(W[k], Number);
-  W.corpses = W.corpses || []; W.res = W.res || {}; W.cut = W.cut || {}; W.foot = W.foot || {}; W.path = W.path || {}; W.pathVer = W.pathVer || 0; W.fields = W.fields || {};
+  W.corpses = W.corpses || []; W.ghosts = W.ghosts || []; W.road = W.road || {}; W.res = W.res || {}; W.cut = W.cut || {}; W.foot = W.foot || {}; W.path = W.path || {}; W.pathVer = W.pathVer || 0; W.fields = W.fields || {};
   for (const T of W.tribes) { T.traps = T.traps || []; T.access = T.access || {}; T.trespass = T.trespass || {}; T.debt = T.debt || {}; T.grudge = T.grudge || {}; T.treaties = T.treaties || []; T.R = T.R || 14; }
   if (W.MW) { C.MW = W.MW; C.MH = W.MH; } else { C.MW = 400; C.MH = 270; W.MW = 400; W.MH = 270; }
   if (W.t.length !== C.MW * C.MH) throw new Error('Spielstand passt nicht zur Kartengröße');
@@ -3096,6 +3119,7 @@ function techDaily(T) {
 // Die Bauten im Lager
 function placeBuild(T, b) {
   // Werkhof (Backofen + Brennofen teilen sich eine Parzelle), Tempel auf vier Parzellen
+  if (b === 'hall') { const O = townOrigin(T); let P = Object.values(O.lots).find(L => L.kind === 'hall'); if (!P) P = allocLot(T, 'hall', 2, 1); if (!P) return null; return [P.x0 + 1 + ((T.bld?.hall || 0) % 5) * 1.6, P.y0 + P.h + 0.5]; }
   if (b !== 'oven' && b !== 'kiln' && b !== 'temple') return null;
   const O = townOrigin(T), kind = b === 'temple' ? 'temple' : 'werk';
   let P = Object.values(O.lots).find(L => L.kind === kind);
@@ -3160,8 +3184,10 @@ function allocLot(T, kind, wl = 1, hl = 1, minR = 1) {
   for (let r = minR; r <= 6; r++) {
     const cand = [];
     for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (Math.max(Math.abs(i), Math.abs(j)) === r || (wl > 1 || hl > 1)) cand.push([i, j]);
-    cand.sort((a, b) => (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])) || hash3(T.id, a[0], a[1]) - hash3(T.id, b[0], b[1]));
+    const key2 = c => Math.abs(c[0]) + Math.abs(c[1]) + hash3(T.id, c[0], c[1]) * 1.6;
+    cand.sort((a, b) => key2(a) - key2(b));
     for (const [i, j] of cand) {
+      if ((kind === 'bau' || kind === 'house') && wl === 1 && r >= 2 && !O.lots[i + ',' + j] && hash3(T.id + 5, i, j) < 0.13 && lotOK(T, O, i, j)) { claimLot(T, O, 'garden', i, j, 1, 1); continue; } // ein Garten bleibt frei
       let ok = true;
       for (let b = 0; b < hl && ok; b++) for (let a = 0; a < wl && ok; a++) { const key = (i + a) + ',' + (j + b); if (O.lots[key] || !lotOK(T, O, i + a, j + b)) ok = false; }
       if (ok) return claimLot(T, O, kind, i, j, wl, hl);
@@ -3184,10 +3210,12 @@ function freeLot(T, P) { const O = T.town; if (!O || !P) return; for (const k in
 const hash3 = (a, b, c) => { let h = (a * 73856093) ^ (b * 19349663) ^ (c * 83492791); h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 // Ein Haus auf einer Parzelle: Tür nach Süden (zur Gasse), Betten an den Wänden
 function houseFromLot(P, base) {
-  const h = Object.assign(base || {}, { lx: P.x0, ly: P.y0, w: P.w, h: P.h, x: P.cx, y: P.cy, lot: P.i + ',' + P.j, rot: 0 });
+  const d = lotHouse(P);
+  const h = Object.assign(base || {}, { lx: d.lx, ly: d.ly, w: d.w, h: d.h, x: d.lx + d.w / 2, y: d.ly + d.h / 2, lot: P.i + ',' + P.j, rot: 0 });
   return h;
 }
-const bedsOf = h => [[h.lx + 0.62, h.ly + 1.45], [h.lx + h.w - 0.62, h.ly + 1.45], [h.lx + 0.62, h.ly + 2.85], [h.lx + h.w - 0.62, h.ly + 2.85], [h.lx + 1.0, h.ly + 3.45], [h.lx + h.w - 0.62, h.ly + 3.55]];
+const bedsOf = h => h.h === 3 ? [[h.lx + 0.62, h.ly + 1.25], [h.lx + h.w - 0.62, h.ly + 1.25], [h.lx + 0.62, h.ly + 2.2], [h.lx + h.w - 0.62, h.ly + 2.2], [h.lx + 1.0, h.ly + 2.55], [h.lx + h.w - 0.62, h.ly + 2.6]]
+  : [[h.lx + 0.62, h.ly + 1.45], [h.lx + h.w - 0.62, h.ly + 1.45], [h.lx + 0.62, h.ly + 2.85], [h.lx + h.w - 0.62, h.ly + 2.85], [h.lx + 1.0, h.ly + 3.45], [h.lx + h.w - 0.62, h.ly + 3.55]];
 const doorOut = h => [h.lx + 2.5, h.ly + h.h + 0.45], doorIn = h => [h.lx + 2.5, h.ly + h.h - 0.55];
 // Wände: hinein und hinaus nur durch die Tür (Kachel lx+2 in der unteren Reihe)
 function houseOK(e, x, y) {
@@ -3201,9 +3229,10 @@ function houseOK(e, x, y) {
 // Wo liegt welches Haus? (für Tür-Wege und Wärme)
 let HMAP = null, HMAPV = -1, HLIST = [];
 function houseAt(x, y) {
-  if (HMAPV !== (W.hutVer || 0) || !HMAP || HMAP.length !== C.MW * C.MH) {
-    HMAPV = W.hutVer || 0; if (!HMAP || HMAP.length !== C.MW * C.MH) HMAP = new Int32Array(C.MW * C.MH); else HMAP.fill(0); HLIST = [null];
-    for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts)) if (h.lx !== undefined) { const id = HLIST.length; HLIST.push(h); for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) HMAP[yy * C.MW + xx] = id; }
+  const hv = (W.hutVer || 0) + W.tribes.reduce((a, T) => a + (T.alive && hallDone(T) ? T.id : 0), 0) * 1e6;
+  if (HMAPV !== hv || !HMAP || HMAP.length !== C.MW * C.MH) {
+    HMAPV = hv; if (!HMAP || HMAP.length !== C.MW * C.MH) HMAP = new Int32Array(C.MW * C.MH); else HMAP.fill(0); HLIST = [null];
+    for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts).concat(hallDone(T) ? [hallOf(T)].filter(Boolean) : [])) if (h.lx !== undefined) { const id = HLIST.length; HLIST.push(h); for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) HMAP[yy * C.MW + xx] = id; }
   }
   x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return undefined;
   const id = HMAP[y * C.MW + x]; return id ? HLIST[id] : undefined;
@@ -3251,7 +3280,7 @@ function aStar(e, tx, ty) {
     const c = pop(); if (c === goal) { const pts = []; let q = c; while (q >= 0 && q !== s) { pts.push([(q % w) + x0 + 0.5, ((q / w) | 0) + y0 + 0.5]); q = from[q]; } return pts.reverse(); }
     const x = (c % w) + x0, y = ((c / w) | 0) + y0, gc = g[c];
     for (let d = 0; d < 4; d++) { const X = x + (d === 0 ? 1 : d === 1 ? -1 : 0), Y = y + (d === 2 ? 1 : d === 3 ? -1 : 0); if (X < x0 || Y < y0 || X >= x0 + w || Y >= y0 + h) continue;
-      const j = (Y - y0) * w + (X - x0), ng = gc + (W.path[Y * C.MW + X] ? 0.7 : 1); if (ng >= G(j) || hn >= AS_MAX * 4 - 1 || !stepOK(e, x, y, X, Y)) continue; st[j] = gen; g[j] = ng; from[j] = c; push(j, ng + 1.2 * (Math.abs(X - gx) + Math.abs(Y - gy))); }
+      const j = (Y - y0) * w + (X - x0), ng = gc + (W.road && W.road[Y * C.MW + X] ? 0.5 : W.path[Y * C.MW + X] ? 0.7 : 1); if (ng >= G(j) || hn >= AS_MAX * 4 - 1 || !stepOK(e, x, y, X, Y)) continue; st[j] = gen; g[j] = ng; from[j] = c; push(j, ng + 1.2 * (Math.abs(X - gx) + Math.abs(Y - gy))); }
   }
   return null;
 }
@@ -3352,8 +3381,9 @@ function townInside(WL, x, y) { const R = WL.bb; x |= 0; y |= 0; if (x < R.x0 ||
 // Welche Siedlung belegt eine Kachel? (damit Siedlungen Abstand halten)
 let TOCC = null, TOCCV = '';
 function townOcc(x, y, self) {
-  const v = W.tribes.reduce((a, T) => a + (T.alive && T.town ? T.id * 7 + (T.townVer || 0) : 0), 0) + ':' + W.tribes.length;
+  const v = W.tribes.reduce((a, T) => a + (T.alive && T.town ? T.id * 7 + (T.townVer || 0) : 0), 0) + ':' + W.tribes.length + ':' + (W.ghostVer || 0);
   if (v !== TOCCV || !TOCC || TOCC.length !== C.MW * C.MH) { TOCCV = v; if (!TOCC || TOCC.length !== C.MW * C.MH) TOCC = new Int32Array(C.MW * C.MH); else TOCC.fill(0);
+    for (const G of (W.ghosts || [])) if (G.town) for (const k in G.town.lots) { const [i, j] = k.split(',').map(Number); const [lx, ly] = lotXY(G.town, i, j); for (let yy = ly - 1; yy <= ly + LOTW; yy++) for (let xx = lx - 1; xx <= lx + LOTW; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) TOCC[yy * C.MW + xx] = -1; }
     for (const T of W.tribes) if (T.alive && T.town) for (const k in T.town.lots) { const [i, j] = k.split(',').map(Number); const [lx, ly] = lotXY(T.town, i, j); for (let yy = ly - 1; yy <= ly + LOTW; yy++) for (let xx = lx - 1; xx <= lx + LOTW; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) TOCC[yy * C.MW + xx] = T.id; } }
   x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return 0; const o = TOCC[y * C.MW + x]; return o && o !== self ? o : 0;
 }
@@ -3698,6 +3728,171 @@ function mergeInto(T, O) {
   for (const X of W.tribes) if (X.rel && X.rel[T.id] !== undefined && X !== O) X.rel[O.id] = Math.max(X.rel[O.id] ?? -100, X.rel[T.id]);
   nudgeTribe(O, 'gast', 0.02);
   chron(3, `Die ${T.name} und die ${O.name} wachsen zusammen: Sie leben nun als eine Sippe${LO ? ` unter ${LO.name}` : ''}${moved ? `, ${moved} Häuser werden im gemeinsamen Dorf neu errichtet` : ''}.`, { tribe: O.id, npc: LT?.id });
+}
+
+// =====================================================================
+//  DÖRFER, DIE BLEIBEN
+//  Verlassene Häuser verschwinden nicht: Sie stehen leer, verfallen über
+//  Jahrzehnte zu Ruinen und zeigen, wo einst eine Sippe lebte. Neue Siedler
+//  und Eroberer ziehen in alte Häuser ein und richten sie wieder her.
+//  Dazu: Haupthaus, Straßen, Fackeln.
+// =====================================================================
+Object.assign(TECH, {
+  fackeln:   { cat: 'handwerk', name: 'Fackeln', icon: '🔥', req: ['feuer_machen'], D: 1600, ctx: { firework: 0.6, coldcamp: 0.2, experiment: 0.3, war: 0.4 }, desc: 'Ein Ast, umwickelt und mit Harz getränkt, brennt lange: Licht für Nachtwege, Wachen und Kriegszüge.', eff: 'Fackeln bei Nacht, Wölfe halten Abstand' },
+  wegebau:   { cat: 'wasser', name: 'Wege & Straßen', icon: '🛤', req: ['huette'], D: 6500, ctx: { carry: 1, build: 0.4, crowd: 0.4 }, cond: T => tPop(T, 25), condTxt: 'mind. 25 Menschen', desc: 'Festgestampfte, aufgeschüttete Erde zwischen den Häusern – später Kies und Pflaster. Auf Straßen geht man schneller.', eff: 'Straßen im Dorf: schneller unterwegs' },
+  haupthaus: { cat: 'ordnung', name: 'Haupthaus', icon: '🏛', req: ['huette'], D: 5500, ctx: { talk: 0.5, build: 0.4, crowd: 1, trade: 0.4 }, cond: T => tPop(T, 18), condTxt: 'mind. 18 Menschen', desc: 'Ein großes Langhaus am Platz: Hier versammeln sich die Angesehenen, hier wird beraten, gerichtet und mit Fremden verhandelt.', eff: 'Ratsversammlungen, Verhandlungen im Haupthaus', build: 'hall' },
+});
+TECH_IDS = Object.keys(TECH);
+TECH.fackeln.how = 'umwickelt einen Ast mit Bast, tränkt ihn in Harz – und trägt das Feuer in die Nacht';
+TECH.wegebau.how = 'schüttet Erde in die Gassen und stampft sie fest, damit man nicht im Schlamm versinkt';
+TECH.haupthaus.how = 'schlägt vor, ein großes Haus für alle Versammlungen zu bauen';
+TECH.fackeln.see = 'Fackeln in der Hand bei Nacht, an Toren und am Platz';
+TECH.wegebau.see = 'Straßen aus festgestampfter Erde, später Kies und Pflaster';
+TECH.haupthaus.see = 'Ein Langhaus am Platz mit langer Tafel und Ehrenplatz';
+BUILD_NEED.hall = 10; BUILD_NAME.hall = 'ihr Haupthaus';
+
+// ---------------------------------------------------------------- Häuser: im Raster, aber jedes etwas anders
+function lotHouse(P) {
+  const h1 = hash3(P.i * 31 + P.j, P.x0, P.y0), h2 = hash3(P.y0, P.i, P.x0 + 7);
+  const hh = h1 < 0.38 ? 3 : 4, dy = hh === 3 && h2 < 0.5 ? 1 : 0;
+  return { lx: P.x0, ly: P.y0 + dy, w: 4, h: hh };
+}
+
+// ---------------------------------------------------------------- Verlassene Dörfer
+function abandonTown(T, why) {
+  if (T.ghosted || !T.town) return;
+  T.ghosted = 1;
+  if (!T.huts.length && !T.storehouse && !(T.bld && T.bld.hall)) return;
+  const town = Object.assign({}, T.town); delete town.wall; delete town.reach; delete town.rect;
+  (W.ghosts || (W.ghosts = [])).push({ id: T.id, name: T.name, col: T.col, t: W.tick, why: why || 'leer', cx: T.cx, cy: T.cy, town, huts: T.huts.map(h => Object.assign({}, h)), store: T.storehouse, bld: T.bld ? Object.assign({}, T.bld) : null, pal: T.pal || 0, penR: T.penR });
+  if (W.ghosts.length > 220) W.ghosts.shift();
+  W.ghostVer = (W.ghostVer || 0) + 1;
+}
+const ghostAge = G => (W.tick - G.t) / C.TPY;
+// Wie verfallen ist ein Haus? 0 = leer, 1 = baufällig, 2 = Ruine
+function decayOf(h, G) { const y = ghostAge(G) / (h.stone ? 2.5 : h.mud ? 1.6 : 1); return y < 6 ? 0 : y < 22 ? 1 : 2; }
+function ghostsNear(x, y, r) { return (W.ghosts || []).filter(G => Math.abs(G.cx - x) < r && Math.abs(G.cy - y) < r && dist(G.cx, G.cy, x, y) < r); }
+// Neue Sippe zieht in die alten Häuser: Lage, Parzellen und Häuser werden übernommen
+function adoptGhost(T, G, how) {
+  const i = W.ghosts.indexOf(G); if (i < 0) return false;
+  if (T.town && !T.ghosted && (T.huts.length || T.storehouse)) abandonTown(T, 'fort');
+  W.ghosts.splice(i, 1); W.ghostVer = (W.ghostVer || 0) + 1;
+  T.cx = G.town.cx + 0.5; T.cy = G.town.cy + 0.5;
+  T.town = Object.assign({}, G.town, { lots: {} });
+  T.huts = []; let ruins = 0, fix = 0;
+  T.town.lots = Object.assign({}, G.town.lots);
+  for (const h of G.huts) {
+    const d = decayOf(h, G), P = T.town.lots[h.lot];
+    if (d >= 2 && P) { P.kind = 'bau'; P.prog = 3; P.stone = h.stone; P.mud = h.mud; ruins++; continue; } // nur noch Boden und Mauerreste: neu aufbauen
+    T.huts.push(Object.assign(h, { worn: d >= 1 ? W.tick : 0, furn: d >= 1 ? Math.min(h.furn ?? 7, 2) : h.furn })); if (d >= 1) fix++;
+  }
+  if (G.store && ghostAge(G) < 15) T.storehouse = G.store;
+  if (G.bld) { T.bld = Object.assign({}, G.bld); if (ghostAge(G) > 30) for (const k in T.bld) if (k !== 'hall' && k !== 'temple' && k !== 'wall') T.bld[k] = 0; }
+  T.pal = ghostAge(G) < 12 ? Math.round(G.pal * 0.6) : 0;
+  T.townVer = (T.townVer || 0) + 1; W.hutVer = (W.hutVer || 0) + 1; T.ghosted = 0;
+  const yrs = Math.round(ghostAge(G));
+  chron(3, how === 'conquer' ? `Die ${T.name} nehmen das Dorf der unterworfenen ${G.name} in Besitz.`
+    : `Die ${T.name} ziehen in die verlassenen Häuser der ${G.name}${yrs > 1 ? `, die vor ${yrs} Jahren hier lebten` : ''}.${fix ? ` ${fix} Häuser müssen ausgebessert werden` : ''}${ruins ? `${fix ? ',' : ''} ${ruins} Ruinen werden wieder aufgebaut` : ''}.`, { tribe: T.id });
+  return true;
+}
+// einmal am Tag: ausgestorbene oder fortgezogene Sippen hinterlassen ihr Dorf
+function villageDaily() {
+  for (const T of W.tribes) if (!T.alive && !T.ghosted && T.town) abandonTown(T, 'tot');
+  for (const T of W.tribes) if (T.alive) {
+    for (const h of T.huts) {
+      // Häuser nutzen sich ab und werden ausgebessert – nur wer sie lange verkommen lässt, verliert sie
+      if (!h.worn && rnd() < 0.0008 * (h.stone ? 0.3 : h.mud ? 0.5 : 1)) h.worn = W.tick;
+      if (h.worn && W.tick - h.worn > C.TPY * 2) { const P = T.town && T.town.lots[h.lot]; T.huts.splice(T.huts.indexOf(h), 1); if (P) { P.kind = 'bau'; P.prog = 3; P.stone = h.stone; P.mud = h.mud; } W.hutVer = (W.hutVer || 0) + 1; chron(1, `Ein Haus der ${T.name} ist eingestürzt – niemand hat es ausgebessert.`, { tribe: T.id }); break; }
+    }
+    if (TK(T, 'wegebau') && T.town && (T.roadT || 0) < W.tick - C.TPD * 10) planRoads(T);
+  }
+}
+
+// ---------------------------------------------------------------- Straßen
+// Zuerst die Gassen vor den Haustüren und am Platz, dann die übrigen Gassen; festgestampfte Erde, später Kies, dann Pflaster
+function roadLevel(T) { return TK(T, 'stadtplanung') || TK(T, 'lehmziegel') && TK(T, 'steinbau') ? 3 : TK(T, 'steinbau') ? 2 : 1; }
+function planRoads(T) {
+  T.roadT = W.tick;
+  const O = T.town, lv = roadLevel(T), out = [], seen = new Set(), R = W.road || (W.road = {});
+  const add = (x, y, pr) => { const k = y * C.MW + x; if (seen.has(k)) return; seen.add(k); if ((R[k] || 0) >= lv) return; const t = W.t[k]; if (t < T_SHORE || t === T_MOUNT || W.fields[k] || houseAt(x, y) || wallAt(x, y)) return; out.push([k, pr]); };
+  for (const key in O.lots) {
+    const L = O.lots[key]; if (key !== L.i + ',' + L.j || L.kind === 'bau' && !L.prog) continue;
+    const [x0, y0] = lotXY(O, L.i, L.j), w = (L.wl || 1) * LOT - 1, h = (L.hl || 1) * LOT - 1;
+    if (L.kind === 'plaza') { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) add(x, y, 0); continue; }
+    for (let x = x0 - 1; x <= x0 + w; x++) add(x, y0 + h, dist(x, y0 + h, O.cx, O.cy)); // Gasse vor der Tür
+    for (let y = y0 - 1; y <= y0 + h; y++) { add(x0 - 1, y, 30 + dist(x0, y, O.cx, O.cy)); add(x0 + w, y, 30 + dist(x0, y, O.cx, O.cy)); }
+    for (let x = x0 - 1; x <= x0 + w; x++) add(x, y0 - 1, 40 + dist(x, y0, O.cx, O.cy));
+  }
+  for (const g of (T.town && (T.pal || T.bld?.wall) ? townWall(T).gates : [])) add(g[0] | 0, g[1] | 0, 20);
+  out.sort((a, b) => a[1] - b[1]);
+  T.roadQ = out.slice(0, 200).map(o => o[0]);
+}
+function stepRoad(n, T, a) {
+  const R = W.road || (W.road = {}), lv = roadLevel(T);
+  if (a.stage === 0) {
+    while (T.roadQ && T.roadQ.length && (R[T.roadQ[0]] || 0) >= lv) T.roadQ.shift();
+    if (!T.roadQ || !T.roadQ.length) { n.act = null; return; }
+    a.k = T.roadQ.shift(); a.tx = (a.k % C.MW) + 0.5; a.ty = ((a.k / C.MW) | 0) + 0.5; a.stage = 1; a.t = 0; a.n = 0; return;
+  }
+  if (a.stage === 1) { if (moveToward(n, a.tx, a.ty, 1) || dist(n.x, n.y, a.tx, a.ty) < 0.5) { a.stage = 2; a.t = 0; } else if (++a.t > 200) n.act = null; return; }
+  a.wk = 1;
+  if (++a.t < (lv === 1 ? 6 : 9)) return;
+  if (lv >= 2) { if (T.store.stone < 1) { a.wk = 0; n.act = null; return; } T.store.stone -= 1; }
+  R[a.k] = lv; W.roadVer = (W.roadVer || 0) + 1; if (HOOKS.onRoad) HOOKS.onRoad(a.k);
+  if (!T.roads) { T.roads = 1; chron(2, `Die ${T.name} legen die erste Straße an – aus festgestampfter Erde.`, { tribe: T.id, npc: n.id }); }
+  if (++a.n >= 4) { a.wk = 0; n.act = null; return; }
+  a.stage = 0;
+}
+// Straßen sind schneller und werden bevorzugt
+const roadAt = i => (W.road && W.road[i]) || 0;
+
+// ---------------------------------------------------------------- Haupthaus
+// ein Langhaus über zwei Parzellen am Platz – es wird einmal gebaut und bleibt; mit neuem Wissen wird es nur ausgebessert
+function hallOf(T) {
+  if (!T.town || !((T.bld?.hall || 0) > 0)) return null;
+  const O = T.town; const P = Object.values(O.lots).find(L => L.kind === 'hall'); if (!P) return null;
+  return { lx: P.x0, ly: P.y0, w: P.w, h: P.h, x: P.cx, y: P.cy, lot: P.i + ',' + P.j, hall: 1, done: (T.bld.hall || 0) >= BUILD_NEED.hall };
+}
+function hallDone(T) { return T.town && (T.bld?.hall || 0) >= BUILD_NEED.hall; }
+function hallSeat(T, i) { const H = hallOf(T); if (!H) return null; const k = i % 8; return [H.lx + 1.5 + (k % 4) * 1.8, H.ly + 1.3 + Math.floor(k / 4) * 1.6]; }
+// Ratsversammlung: die Angesehenen sitzen im Haupthaus beisammen
+function stepCouncil(n, T, a) {
+  if (!hallDone(T)) { n.act = null; return; }
+  if (a.stage === 0) { const s = hallSeat(T, n.id); a.tx = s[0]; a.ty = s[1]; if (moveToward(n, a.tx, a.ty, 1) || dist(n.x, n.y, a.tx, a.ty) < 0.6) { a.stage = 1; a.t = 0; } else if (++a.t > 250) n.act = null; return; }
+  a.t++; n.social = Math.min(100, n.social + 1);
+  if (a.t % 4 === 0) { const H = hallOf(T); for (const id of T.members) { const m = NPC.get(id); if (m && m !== n && m.act && m.act.type === 'council' && m.act.stage === 1) { talk(n, m); break; } } }
+  if (a.t > 22) { n.prestige += 0.3; n.act = null; }
+}
+
+// ---------------------------------------------------------------- Fackeln
+// Wer trägt eine Fackel? Nachts unterwegs, auf Wache, im Kampf – wenn die Sippe Fackeln kennt
+function torchOf(n) {
+  const a = n.act; if (!a) return false;
+  const T = tribeOf(n); if (!T || !TK(T, 'fackeln') || ageY(n) < 12) return false;
+  const h = hourNow(); if (!(h >= 19.5 || h < 6)) return false;
+  if (a.type === 'sleep' || a.type === 'down' || a.type === 'hide' || a.type === 'rest' || a.type === 'council') return false;
+  return a.type === 'raid' || a.type === 'defend' || a.type === 'watch' || a.type === 'return' || a.type === 'bury' || (n.x !== n.px || n.y !== n.py) && !houseAt(n.x, n.y);
+}
+
+// ---------------------------------------------------------------- Eroberte Dörfer bleiben bewohnt
+// Ein Statthalter der Sieger bleibt mit einigen Kriegern im eroberten Dorf – die Unterworfenen leben weiter in ihren Häusern
+function holdConquered(T, E, rest, raiders) {
+  const pool = raiders.filter(m => m.alive !== false && m.tribe === T.id && m.id !== T.leader && ageY(m) >= 18 && fitToFight(m)).sort((a, b) => (b.tr.ehrgeiz + b.prestige / 50) - (a.tr.ehrgeiz + a.prestige / 50));
+  const L2 = pool[0]; if (!L2) return null;
+  const N = makeTribe(E.cx, E.cy, T);
+  const crew = [L2, ...pool.slice(1, 1 + Math.min(4, Math.floor(pool.length / 3)))];
+  for (const m of crew) { const i = T.members.indexOf(m.id); if (i >= 0) T.members.splice(i, 1); N.members.push(m.id); m.tribe = N.id; m.act = null; memo(m, `bleibt im eroberten Dorf der ${E.name}`); }
+  moveMembers(rest, E, N, `lebt nun unter ${L2.name}, dem Statthalter der ${T.name}`);
+  N.town = E.town; N.huts = E.huts; N.storehouse = E.storehouse; N.bld = E.bld; N.pal = E.pal; N.penR = E.penR; N.pen = E.pen; N.traps = E.traps || [];
+  N.store.food = Math.round(T.store.food * 0.15); T.store.food -= N.store.food;
+  E.town = null; E.huts = []; E.ghosted = 1; E.storehouse = null;
+  N.leader = L2.id; L2.notable = true; L2.prestige += 20;
+  N.cv = memberMean(N); N.rules = (T.rules || []).map(r => ({ ...r })); N.gov = bestGov(N).key; N.govSince = W.tick; initCulture(N);
+  N.vassalOf = T.id; N.rel[T.id] = 70; T.rel[N.id] = 70; N.treaties.push({ with: T.id, kind: 'buendnis', t: W.tick }); T.treaties.push({ with: N.id, kind: 'buendnis', t: W.tick });
+  for (const k in T.rel) if (+k !== N.id) { N.rel[k] = Math.round(T.rel[k] * 0.6); const X = TRIBE.get(+k); if (X) X.rel[N.id] = N.rel[k]; }
+  N.fire.lit = true; N.fire.fuel = 40; N.townVer = (E.townVer || 0) + 1; W.hutVer = (W.hutVer || 0) + 1;
+  chron(3, `${fullName(L2)} bleibt als Statthalter der ${T.name} im eroberten Dorf. Die unterworfenen ${E.name} leben weiter in ihren Häusern – nun als ${N.name}, den ${T.name} untertan.`, { tribe: N.id, npc: L2.id });
+  return N;
 }
 
 </script>
@@ -4031,6 +4226,7 @@ function moveStep(e, tx, ty, speed) {
   const ti = (e.y | 0) * C.MW + (e.x | 0);
   let cost = MOVE_COST[W.t[ti]] || 0.5; const pl = W.path[ti];
   if (pl) cost = Math.max(cost, 0.85) * (1 + 0.15 * pl);
+  { const rl = W.road && W.road[ti]; if (rl) cost = Math.max(cost, 1) * (1.25 + 0.1 * rl); }
   if (e.know && (W.tick + e.id) % 3 === 0 && W.t[ti] >= T_SHORE) footstep(ti);
   const step = Math.min(d, speed * cost);
   const qx = e.x + dx / d * step, qy = e.y + dy / d * step;
@@ -4071,7 +4267,7 @@ function flowFor(T) {
       const j = ny * MW + nx, gj = G(nx, ny), t = W.t[gj];
       if (t === T_DEEP || (!raft && t === T_SHALLOW)) continue;
       if (dx && dy && (W.t[G(nx, y)] <= (raft ? T_DEEP : T_SHALLOW) || W.t[G(x, ny)] <= (raft ? T_DEEP : T_SHALLOW))) continue;
-      let c = TILE_COST[t]; const pl = W.path[gj]; if (W.hutVer) { if (WMAP && WMAP.has(gj)) continue; const hh = houseAt(gj % C.MW, (gj / C.MW) | 0); if (hh) { const hx = gj % C.MW, hy = (gj / C.MW) | 0; if (!(hx === hh.lx + 2 && hy === hh.ly + hh.h - 1)) continue; c *= 3; } } if (pl) c = Math.max(6, Math.round(c / (1 + 0.3 * pl)));
+      let c = TILE_COST[t]; const pl = W.path[gj]; if (W.hutVer) { if (WMAP && WMAP.has(gj)) continue; const hh = houseAt(gj % C.MW, (gj / C.MW) | 0); if (hh) { const hx = gj % C.MW, hy = (gj / C.MW) | 0; if (!(hx === hh.lx + 2 && hy === hh.ly + hh.h - 1)) continue; c *= 3; } } if (pl) c = Math.max(6, Math.round(c / (1 + 0.3 * pl))); if (W.road && W.road[gj]) c = 5;
       if (dx && dy) c = Math.round(c * 1.41);
       const nd = d[i] + c; if (nd < d[j] && hn < N * 4 - 1) { d[j] = nd; push(j, nd); }
     }
@@ -4317,7 +4513,7 @@ function decide(n) {
       if (n.know.flechten && n.tools.korb <= 0) add('craft', 0.4, { what: 'korb' });
       if (n.know.bogen && !(n.tools.bogen > 0) && age >= 14) add('craft', 0.55 + tr.mut * 0.3, { what: 'bogen' });
       if (n.know.toepfern && T.pots < pop / 3 && T.fire.lit) add('craft', 0.35 + tr.geschick * 0.3, { what: 'topf' });
-      if (n.know.huette && age >= 15 && busyBuilders(T) < 1 + Math.floor(pop / 10)) { const site = T.town && Object.values(T.town.lots).some(L => L.kind === 'bau' && lotFree(L, n)), furn = T.huts.some(h => h.furn !== undefined && h.furn < FURN_MAX); if (T.huts.length < Math.ceil(pop / 6) || site || (n.know.steinbau && T.huts.some(h => !h.stone))) add('build', 0.45 + (season >= 2 ? 0.4 : 0) + tr.mitgefuehl * 0.2 + (site ? 0.25 : 0)); else if (furn) add('build', 0.3 + tr.geschick * 0.2); }
+      if (n.know.huette && age >= 15 && busyBuilders(T) < 1 + Math.floor(pop / 10)) { const site = T.town && Object.values(T.town.lots).some(L => L.kind === 'bau' && lotFree(L, n)), furn = T.huts.some(h => (h.furn !== undefined && h.furn < FURN_MAX) || h.worn); if (T.huts.length < Math.ceil(pop / 6) || site || (n.know.steinbau && T.huts.some(h => !h.stone))) add('build', 0.45 + (season >= 2 ? 0.4 : 0) + tr.mitgefuehl * 0.2 + (site ? 0.25 : 0)); else if (furn) add('build', 0.3 + tr.geschick * 0.2); }
     }
     // Sesshaftigkeit: Felder, Vieh, Reusen, Bauten
     if (age >= 13 && n.know.ackerbau) { const fw = fieldWork(T); if (fw) add('farm', provNeed * 0.9 + 0.35 + (season === 2 ? 0.4 : 0)); }
@@ -4325,6 +4521,8 @@ function decide(n) {
     if (age >= 13 && n.know.reusen && (T.traps || []).length < 3 && season !== 3) add('trap', 0.45);
     if (age >= 15 && n.know.huette && !T.storehouse && T.huts.length >= 2) add('construct', 0.55 + tr.mitgefuehl * 0.3, { what: 'store' });
     if (age >= 15) for (const b of buildWants(T)) add('construct', (b === 'wall' ? 0.3 : 0.4) + tr.mitgefuehl * 0.15 + (b === 'temple' ? tr.fromm * 0.3 : 0), { what: b });
+    if (age >= 15 && T.roadQ && T.roadQ.length && TK(T, 'wegebau')) add('road', 0.3 + tr.mitgefuehl * 0.15 + tr.geschick * 0.1);
+    if (age >= 25 && hallDone(T) && (T.leader === n.id || n.prestige > 18 || age > 50) && !night && rnd() < 0.5) add('council', 0.35 + n.tr.gesellig * 0.3 + (T.leader === n.id ? 0.2 : 0));
     if (age >= 15 && n.know.palisade && (T.pal || 0) < 24 && !((T.bld?.wall || 0) > 0)) add('construct', 0.35 + tr.mitgefuehl * 0.2 + (W.tick - (T.lastRaided || -1e9) < C.TPY * 2 ? 0.7 : 0), { what: 'pal' });
     // Besuch bei befreundeten Nachbarn
     if (age >= 16 && season !== 3 && tr.gesellig > 0.45 && rnd() < 0.3) { const F = W.tribes.find(o => o.alive && o !== T && (T.rel[o.id] ?? -99) > 12 && dist(o.cx, o.cy, T.cx, T.cy) < 90 && reachable(T, o.cx, o.cy)); if (F) add('visit', tr.gesellig * 0.35 + (n.partner ? 0 : 0.15) - provNeed * 0.2, { target: F.id }); }
@@ -4444,6 +4642,7 @@ function startAct(n, o) {
     case 'theft': { a.victim = o.victim; break; }
     case 'defend': case 'hide': case 'down': { a.raid = o.raid; a.tx = n.x; a.ty = n.y; break; }
     case 'bury': { a.corpse = o.corpse; break; }
+    case 'council': case 'road': break;
     case 'farm': { const f = fieldWork(T); if (!f) { a.t = 99; break; } a.fi = f.i; a.job = f.job; a.tx = (f.i % C.MW) + 0.5; a.ty = ((f.i / C.MW) | 0) + 0.5; break; }
     case 'herd': { let best = null, bd = 40; for (const g of W.animals) if (HERD_K[g.k] && !g.tribe && n.know[HERD_K[g.k]]) { const d = dist(g.x, g.y, T.cx, T.cy); if (d < bd && reachable(T, g.x, g.y)) { bd = d; best = g; } } if (!best) { a.t = 99; break; } a.goat = best.id; a.tx = best.x; a.ty = best.y; break; }
     case 'trap': { const shore = (x, y) => W.t[y * C.MW + x] >= T_SHORE && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => W.t[(y + dy) * C.MW + x + dx] === T_SHALLOW) && reachable(T, x, y); const p = nearestTile(T.cx, T.cy, 16, shore) || nearestTile(T.cx, T.cy, 30, shore); if (!p) { a.t = 99; T.noTrap = W.tick; break; } a.tx = p[0]; a.ty = p[1]; break; }
@@ -4620,6 +4819,8 @@ function stepNpc(n) {
     case 'hide': stepHide(n, T, a); break;
     case 'down': stepDown(n, T, a); break;
     case 'bury': stepBury(n, T, a); break;
+    case 'council': stepCouncil(n, T, a); break;
+    case 'road': stepRoad(n, T, a); break;
     case 'watch': stepWatch(n, a); break;
     case 'farm': stepFarm(n, T, a, at); break;
     case 'herd': stepHerd(n, T, a); break;
@@ -4931,7 +5132,8 @@ function stepBuild(n, T, a, at) {
   const O = townOrigin(T);
   if (a.stage === 0) {
     let P = a.lot ? O.lots[a.lot] : null;
-    if (!P && !a.furnish) {
+    if (!P && !a.furnish && !a.repair) { const hw = T.huts.find(h => h.worn && h.lx !== undefined && (!h.fb || h.fb === n.id || !NPC.get(h.fb))); if (hw) { hw.fb = n.id; a.repair = hw.lot; } }
+    if (!P && !a.furnish && !a.repair) {
       // Einrichtung fehlt in einem fertigen Haus?
       const hf = T.huts.find(h => h.lx !== undefined && h.furn !== undefined && h.furn < FURN_MAX && (!h.fb || h.fb === n.id || !NPC.get(h.fb)));
       const enough = T.huts.length >= Math.ceil(T.members.length / 6) && !Object.values(O.lots).some(L => L.kind === 'bau' && lotFree(L, n));
@@ -4946,7 +5148,7 @@ function stepBuild(n, T, a, at) {
     }
     // Material besorgen
     const replacing = !!a.lot && T.huts.some(h => h.lot === a.lot);
-    const need = a.furnish ? { wood: 1, stone: 0 } : hutNeeds(T, P, stoneHut, replacing);
+    const need = a.repair ? { wood: 2, stone: 0 } : a.furnish ? { wood: 1, stone: 0 } : hutNeeds(T, P, stoneHut, replacing);
     if (n.inv.stone + T.store.stone < need.stone) {
       let p = null;
       if (T.quarry) { const [qx, qy] = T.quarry; if (W.t[(qy | 0) * C.MW + (qx | 0)] >= T_HILLS) p = T.quarry; else { // Steinbruch wandert weiter
@@ -4961,6 +5163,7 @@ function stepBuild(n, T, a, at) {
       if (!p) { n.act = null; return; }
       a.tree = treeOf(p); [a.tx, a.ty] = besideTile(p); a.stage = 1; a.t = 0; return;
     }
+    if (a.repair) { const h = T.huts.find(h => h.lot === a.repair); if (!h) { n.act = null; return; } a.tx = h.lx + 2.5; a.ty = h.ly + h.h + 0.4; a.stage = 7; a.t = 0; return; }
     if (a.furnish) { const h = T.huts.find(h => h.lot === a.furnish); if (!h) { n.act = null; return; } const B = bedsOf(h), b = B[Math.min(B.length - 1, Math.max(0, (h.furn || 0) - 1))]; a.tx = b[0]; a.ty = b[1]; a.stage = 6; a.t = 0; return; }
     if (!P) { n.act = null; return; }
     [a.tx, a.ty] = replacing ? [P.cx, P.cy + 1.5] : sitePos(P, P.prog || 0);
@@ -4986,6 +5189,14 @@ function stepBuild(n, T, a, at) {
     const w = Math.min(1, n.inv.wood); n.inv.wood -= w; T.store.wood = Math.max(0, T.store.wood - (1 - w));
     h.furn = Math.min(FURN_MAX, (h.furn || 0) + 1); h.fb = 0; insightCtx(n, 'build', 0.3);
     n.act = null; return;
+  }
+  // Ausbessern: Dach flicken, Wände verstärken
+  if (a.stage === 7) {
+    const h = T.huts.find(h => h.lot === a.repair); if (!h) { n.act = null; return; }
+    if (a.t < 999) { if (moveToward(n, a.tx, a.ty, 1) || dist(n.x, n.y, a.tx, a.ty) < 0.7) a.t = 999; else if (++a.t > 300) { n.act = null; } return; }
+    a.wk = 1; if (++a.t < 999 + 14) return;
+    const w = Math.min(2, n.inv.wood); n.inv.wood -= w; T.store.wood = Math.max(0, T.store.wood - (2 - w));
+    h.worn = 0; h.fb = 0; n.act = null; return;
   }
   // stage 3: am Bauplatz arbeiten
   const P = O.lots[a.lot];
@@ -5017,7 +5228,7 @@ function stepBuild(n, T, a, at) {
   if (P.prog < HUT_STEPS) { a.wk = 0; if (rnd() < 0.5 || n.hunger > 50) { P.busy = 0; n.act = null; } else a.stage = 0; return; } // nächster Schritt – oder erst einmal etwas anderes tun
   // fertig
   P.busy = 0; P.kind = 'house'; delete P.prog;
-  T.huts.push(houseFromLot(P, { by: P.by || n.name, t: W.tick, stone: P.stone, mud: P.mud, furn: 0 })); W.hutVer = (W.hutVer || 0) + 1;
+  T.huts.push(houseFromLot(P, { by: P.by || n.name, t: W.tick, stone: P.stone, mud: P.mud, furn: P.prog0 ? 2 : 0 })); W.hutVer = (W.hutVer || 0) + 1;
   insightCtx(n, 'build', 1);
   if (stoneHut && T.huts.filter(h => h.stone).length === 1) chron(2, `${n.name} errichtet das erste Steinhaus der ${T.name}.`, { npc: n.id, tribe: T.id });
   else if (T.huts.length === 1) chron(2, `${n.name} errichtet die erste Hütte der ${T.name}.`, { npc: n.id, tribe: T.id });
@@ -5400,8 +5611,8 @@ function stepDiplo(n, T, a, at) {
   if (!O || !O.alive) { n.act = null; return; }
   if (a.stage === 0) {
     if (!a.announced) { a.announced = 1; chron(1, `${fullName(n)}, Oberhaupt der ${T.name}, bricht zu den ${O.name} auf, ${DIPLO_TXT[a.kind]}.`, { tribe: T.id, npc: n.id }); }
-    a.tx = O.cx; a.ty = O.cy;
-    if (dist(n.x, n.y, O.cx, O.cy) < 3.5) { a.stage = 1; a.t = 0; return; }
+    const HS = hallDone(O) ? hallSeat(O, 3) : null; a.tx = HS ? HS[0] : O.cx; a.ty = HS ? HS[1] : O.cy;
+    if (dist(n.x, n.y, a.tx, a.ty) < (HS ? 1 : 3.5)) { a.stage = 1; a.t = 0; if (HS && !a.hallMsg) { a.hallMsg = 1; chron(1, `${n.name} wird im Haupthaus der ${O.name} empfangen.`, { tribe: O.id, npc: n.id }); } return; }
     if (!moveVia(n, O, a.tx, a.ty, 1) && ++a.t > 400) n.act = null;
     return;
   }
@@ -5518,7 +5729,9 @@ function resolveConquest(R) {
     if (cvOf(T, 'unfreiheit') > 0.35) for (const m of rest) if (ageY(m) >= 12 && rnd() < 0.5 + cvOf(T, 'unfreiheit') * 0.4 && m.id !== E.leader) m.unfrei = { t: W.tick, from: E.id };
     for (const m of rest) { nudge(m, 'freiheit', 0.08); nudge(m, 'rache', 0.05); }
     nudgeTribe(T, 'krieger', 0.04); nudgeTribe(T, 'ruhm', 0.03); nudgeTribe(T, 'gleichheit', -0.03);
-    if (rest.length) moveMembers(rest, E, T, `wurde von den ${T.name} unterworfen`);
+    let held = null;
+    if (rest.length >= 8 && E.town && E.huts.length >= 2) held = holdConquered(T, E, rest, raiders);
+    if (!held && rest.length) moveMembers(rest, E, T, `wurde von den ${T.name} unterworfen`);
     if (E.alive) { E.alive = false; E.died = W.tick; }
     const L = NPC.get(T.leader); if (L) { L.prestige += 30; L.notable = true; memo(L, `hat die ${E.name} unterworfen`); }
     chron(3, `Eroberung! Die ${T.name} besiegen die ${E.name}${LE && LE.alive !== false ? ` – ${LE.name} ${fled && LE.tribe !== T.id ? 'flieht' : 'beugt sich'}` : ''}. ${rest.length} Menschen werden Teil der ${T.name}${fled ? `, ${fled} fliehen zu den ${flee.name}` : ''}. Das Land der ${E.name} gehört nun den Siegern.`, { tribe: T.id, npc: L?.id });
@@ -5618,11 +5831,13 @@ function foundTribe(founder, followers, reason) {
     if (!reachable(O, x, y)) continue;
     let s = bushesNear(x, y, 10).reduce((a, b) => a + b.max, 0);
     const w = nearestTile(x, y, 6, (tx, ty) => W.t[ty * C.MW + tx] <= T_SHALLOW); if (w) s += 30;
+    if (W.ghosts && ghostsNear(x, y, 10).length) s += 80; // verlassene Häuser locken
     if (s > bs) { bs = s; best = [x, y]; }
   }
   if (!best) return null;
   const T = makeTribe(best[0], best[1], O);
   T.fire.lit = O.fire.lit; T.fire.fuel = 30;
+  { const G = (W.ghosts ? ghostsNear(T.cx, T.cy, 12) : [])[0]; if (G && !W.tribes.some(X => X.alive && X !== T && dist(X.cx, X.cy, G.cx, G.cy) < 15)) T.adoptG = G; }
   const share = Math.floor(O.store.food * followers.length / Math.max(1, O.members.length)); O.store.food -= share; T.store.food += share;
   for (const m of [founder, ...followers]) {
     const i = O.members.indexOf(m.id); if (i >= 0) O.members.splice(i, 1);
@@ -5636,6 +5851,7 @@ function foundTribe(founder, followers, reason) {
   if (reason !== 'werte') chron(3, `${fullName(founder)} verlässt mit ${followers.length} Gefährten die ${O.name}${reason === 'streit' ? ' im Streit' : reason === 'kult' ? ' – gemeinsam mit den Anhängern des neuen Glaubens' : ''} und gründet die Sippe der ${T.name}.`, { npc: founder.id, tribe: T.id });
   if (!O.members.length && O.alive) { O.alive = false; chron(3, `Die ${O.name} existieren nicht mehr – alle sind fortgezogen.`, { tribe: O.id }); }
   if (O.leader === founder.id || !NPC.get(O.leader) || NPC.get(O.leader).tribe !== O.id) { O.leader = 0; chooseLeader(O); }
+  if (T.adoptG) { const G = T.adoptG; delete T.adoptG; adoptGhost(T, G); }
   return T;
 }
 function gatherFollowers(founder, fraction, filter) {
@@ -5823,9 +6039,12 @@ function relocate(T, pop) {
     if (s > bs * 1.3) { bs = s; best = [x, y]; }
   }
   if (!best) return;
+  abandonTown(T, 'fort'); const G0 = ghostsNear(best[0], best[1], 14).find(G => G.id !== T.id);
   T.cx = best[0]; T.cy = best[1]; T.moved = W.tick; T.huts = []; T.town = null; T.penR = null; T.bld = null; T.bpos = null; W.hutVer = (W.hutVer || 0) + 1; T.cem = null; T.quarry = null; T.storehouse = null; T.pal = 0; T.pen = null; T.traps = [];
+  T.ghosted = 0;
   for (const id of T.members) { const m = NPC.get(id); if (m) m.act = null; }
   chron(2, `Das Land gibt nicht mehr genug her: Die ${T.name} ziehen weiter und schlagen ein neues Lager auf.`, { tribe: T.id });
+  if (G0) adoptGhost(T, G0);
 }
 function startCult(c, forced) {
   const T = tribeOf(c);
@@ -5885,7 +6104,7 @@ function stepAnimals() {
 }
 function dailyTick() {
   const day = dayNum(), season = seasonNow(), dayOfYear = day % C.DPY;
-  corpseDaily();
+  corpseDaily(); villageDaily();
   // Büsche wachsen
   const grow = [1.4, 2, 3.2, 0][season];
   for (const b of W.bushes) b.f = Math.min(b.max, b.f + Math.floor(grow) + (rnd() < grow % 1 ? 1 : 0));
@@ -5895,8 +6114,7 @@ function dailyTick() {
     const spoil = (T.storehouse ? 0.45 : 1) * (season === 3 ? 0.004 : 0.008) * (T.huts.length >= T.members.length / 8 ? 0.6 : 1) * (T.pots > 0 ? Math.max(0.3, 1 - T.pots / Math.max(1, T.members.length) * 1.5) : 1);
     T.store.food = Math.max(0, T.store.food * (1 - spoil * spoilMul(T)));
     if (T.fire.lit) { T.fire.fuel -= season === 3 ? (W.hardWinter ? 9 : 7) : 5; if (T.fire.fuel <= 0 && T.store.wood > 0) { const w = Math.min(T.store.wood, 10); T.store.wood -= w; T.fire.fuel += w * 4; } if (T.fire.fuel <= -15) { T.fire.lit = false; T.fire.fuel = 0; T.fireLostT = W.tick; chron(tribeKnows(T, 'feuer_machen') ? 2 : 3, `Das Feuer der ${T.name} ist erloschen!${tribeKnows(T, 'feuer_machen') ? '' : ' Niemand dort weiß, wie man es neu entfacht.'}`, { tribe: T.id }); } }
-    // Hütten verfallen
-    for (let i = T.huts.length - 1; i >= 0; i--) if (!T.huts[i].stone && !T.huts[i].mud && rnd() < 0.0008) { const h = T.huts.splice(i, 1)[0]; if (T.town && T.town.lots[h.lot]) T.town.lots[h.lot].kind = 'bau'; W.hutVer = (W.hutVer || 0) + 1; }
+    // Hütten nutzen sich ab: siehe villageDaily
   }
   if (dayOfYear === SEASON_LEN[0] + SEASON_LEN[1] + SEASON_LEN[2]) {
     W.hardWinter = rnd() < 0.22;
@@ -6075,7 +6293,7 @@ function serialize() {
 function deserialize(str) {
   W = JSON.parse(str);
   for (const k of ['t', 'clay', 'flint']) if (typeof W[k] === 'string') W[k] = Array.from(W[k], Number);
-  W.corpses = W.corpses || []; W.res = W.res || {}; W.cut = W.cut || {}; W.foot = W.foot || {}; W.path = W.path || {}; W.pathVer = W.pathVer || 0; W.fields = W.fields || {};
+  W.corpses = W.corpses || []; W.ghosts = W.ghosts || []; W.road = W.road || {}; W.res = W.res || {}; W.cut = W.cut || {}; W.foot = W.foot || {}; W.path = W.path || {}; W.pathVer = W.pathVer || 0; W.fields = W.fields || {};
   for (const T of W.tribes) { T.traps = T.traps || []; T.access = T.access || {}; T.trespass = T.trespass || {}; T.debt = T.debt || {}; T.grudge = T.grudge || {}; T.treaties = T.treaties || []; T.R = T.R || 14; }
   if (W.MW) { C.MW = W.MW; C.MH = W.MH; } else { C.MW = 400; C.MH = 270; W.MW = 400; W.MH = 270; }
   if (W.t.length !== C.MW * C.MH) throw new Error('Spielstand passt nicht zur Kartengröße');
@@ -6643,6 +6861,7 @@ function techDaily(T) {
 // Die Bauten im Lager
 function placeBuild(T, b) {
   // Werkhof (Backofen + Brennofen teilen sich eine Parzelle), Tempel auf vier Parzellen
+  if (b === 'hall') { const O = townOrigin(T); let P = Object.values(O.lots).find(L => L.kind === 'hall'); if (!P) P = allocLot(T, 'hall', 2, 1); if (!P) return null; return [P.x0 + 1 + ((T.bld?.hall || 0) % 5) * 1.6, P.y0 + P.h + 0.5]; }
   if (b !== 'oven' && b !== 'kiln' && b !== 'temple') return null;
   const O = townOrigin(T), kind = b === 'temple' ? 'temple' : 'werk';
   let P = Object.values(O.lots).find(L => L.kind === kind);
@@ -6707,8 +6926,10 @@ function allocLot(T, kind, wl = 1, hl = 1, minR = 1) {
   for (let r = minR; r <= 6; r++) {
     const cand = [];
     for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (Math.max(Math.abs(i), Math.abs(j)) === r || (wl > 1 || hl > 1)) cand.push([i, j]);
-    cand.sort((a, b) => (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])) || hash3(T.id, a[0], a[1]) - hash3(T.id, b[0], b[1]));
+    const key2 = c => Math.abs(c[0]) + Math.abs(c[1]) + hash3(T.id, c[0], c[1]) * 1.6;
+    cand.sort((a, b) => key2(a) - key2(b));
     for (const [i, j] of cand) {
+      if ((kind === 'bau' || kind === 'house') && wl === 1 && r >= 2 && !O.lots[i + ',' + j] && hash3(T.id + 5, i, j) < 0.13 && lotOK(T, O, i, j)) { claimLot(T, O, 'garden', i, j, 1, 1); continue; } // ein Garten bleibt frei
       let ok = true;
       for (let b = 0; b < hl && ok; b++) for (let a = 0; a < wl && ok; a++) { const key = (i + a) + ',' + (j + b); if (O.lots[key] || !lotOK(T, O, i + a, j + b)) ok = false; }
       if (ok) return claimLot(T, O, kind, i, j, wl, hl);
@@ -6731,10 +6952,12 @@ function freeLot(T, P) { const O = T.town; if (!O || !P) return; for (const k in
 const hash3 = (a, b, c) => { let h = (a * 73856093) ^ (b * 19349663) ^ (c * 83492791); h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 // Ein Haus auf einer Parzelle: Tür nach Süden (zur Gasse), Betten an den Wänden
 function houseFromLot(P, base) {
-  const h = Object.assign(base || {}, { lx: P.x0, ly: P.y0, w: P.w, h: P.h, x: P.cx, y: P.cy, lot: P.i + ',' + P.j, rot: 0 });
+  const d = lotHouse(P);
+  const h = Object.assign(base || {}, { lx: d.lx, ly: d.ly, w: d.w, h: d.h, x: d.lx + d.w / 2, y: d.ly + d.h / 2, lot: P.i + ',' + P.j, rot: 0 });
   return h;
 }
-const bedsOf = h => [[h.lx + 0.62, h.ly + 1.45], [h.lx + h.w - 0.62, h.ly + 1.45], [h.lx + 0.62, h.ly + 2.85], [h.lx + h.w - 0.62, h.ly + 2.85], [h.lx + 1.0, h.ly + 3.45], [h.lx + h.w - 0.62, h.ly + 3.55]];
+const bedsOf = h => h.h === 3 ? [[h.lx + 0.62, h.ly + 1.25], [h.lx + h.w - 0.62, h.ly + 1.25], [h.lx + 0.62, h.ly + 2.2], [h.lx + h.w - 0.62, h.ly + 2.2], [h.lx + 1.0, h.ly + 2.55], [h.lx + h.w - 0.62, h.ly + 2.6]]
+  : [[h.lx + 0.62, h.ly + 1.45], [h.lx + h.w - 0.62, h.ly + 1.45], [h.lx + 0.62, h.ly + 2.85], [h.lx + h.w - 0.62, h.ly + 2.85], [h.lx + 1.0, h.ly + 3.45], [h.lx + h.w - 0.62, h.ly + 3.55]];
 const doorOut = h => [h.lx + 2.5, h.ly + h.h + 0.45], doorIn = h => [h.lx + 2.5, h.ly + h.h - 0.55];
 // Wände: hinein und hinaus nur durch die Tür (Kachel lx+2 in der unteren Reihe)
 function houseOK(e, x, y) {
@@ -6748,9 +6971,10 @@ function houseOK(e, x, y) {
 // Wo liegt welches Haus? (für Tür-Wege und Wärme)
 let HMAP = null, HMAPV = -1, HLIST = [];
 function houseAt(x, y) {
-  if (HMAPV !== (W.hutVer || 0) || !HMAP || HMAP.length !== C.MW * C.MH) {
-    HMAPV = W.hutVer || 0; if (!HMAP || HMAP.length !== C.MW * C.MH) HMAP = new Int32Array(C.MW * C.MH); else HMAP.fill(0); HLIST = [null];
-    for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts)) if (h.lx !== undefined) { const id = HLIST.length; HLIST.push(h); for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) HMAP[yy * C.MW + xx] = id; }
+  const hv = (W.hutVer || 0) + W.tribes.reduce((a, T) => a + (T.alive && hallDone(T) ? T.id : 0), 0) * 1e6;
+  if (HMAPV !== hv || !HMAP || HMAP.length !== C.MW * C.MH) {
+    HMAPV = hv; if (!HMAP || HMAP.length !== C.MW * C.MH) HMAP = new Int32Array(C.MW * C.MH); else HMAP.fill(0); HLIST = [null];
+    for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts).concat(hallDone(T) ? [hallOf(T)].filter(Boolean) : [])) if (h.lx !== undefined) { const id = HLIST.length; HLIST.push(h); for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) HMAP[yy * C.MW + xx] = id; }
   }
   x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return undefined;
   const id = HMAP[y * C.MW + x]; return id ? HLIST[id] : undefined;
@@ -6798,7 +7022,7 @@ function aStar(e, tx, ty) {
     const c = pop(); if (c === goal) { const pts = []; let q = c; while (q >= 0 && q !== s) { pts.push([(q % w) + x0 + 0.5, ((q / w) | 0) + y0 + 0.5]); q = from[q]; } return pts.reverse(); }
     const x = (c % w) + x0, y = ((c / w) | 0) + y0, gc = g[c];
     for (let d = 0; d < 4; d++) { const X = x + (d === 0 ? 1 : d === 1 ? -1 : 0), Y = y + (d === 2 ? 1 : d === 3 ? -1 : 0); if (X < x0 || Y < y0 || X >= x0 + w || Y >= y0 + h) continue;
-      const j = (Y - y0) * w + (X - x0), ng = gc + (W.path[Y * C.MW + X] ? 0.7 : 1); if (ng >= G(j) || hn >= AS_MAX * 4 - 1 || !stepOK(e, x, y, X, Y)) continue; st[j] = gen; g[j] = ng; from[j] = c; push(j, ng + 1.2 * (Math.abs(X - gx) + Math.abs(Y - gy))); }
+      const j = (Y - y0) * w + (X - x0), ng = gc + (W.road && W.road[Y * C.MW + X] ? 0.5 : W.path[Y * C.MW + X] ? 0.7 : 1); if (ng >= G(j) || hn >= AS_MAX * 4 - 1 || !stepOK(e, x, y, X, Y)) continue; st[j] = gen; g[j] = ng; from[j] = c; push(j, ng + 1.2 * (Math.abs(X - gx) + Math.abs(Y - gy))); }
   }
   return null;
 }
@@ -6899,8 +7123,9 @@ function townInside(WL, x, y) { const R = WL.bb; x |= 0; y |= 0; if (x < R.x0 ||
 // Welche Siedlung belegt eine Kachel? (damit Siedlungen Abstand halten)
 let TOCC = null, TOCCV = '';
 function townOcc(x, y, self) {
-  const v = W.tribes.reduce((a, T) => a + (T.alive && T.town ? T.id * 7 + (T.townVer || 0) : 0), 0) + ':' + W.tribes.length;
+  const v = W.tribes.reduce((a, T) => a + (T.alive && T.town ? T.id * 7 + (T.townVer || 0) : 0), 0) + ':' + W.tribes.length + ':' + (W.ghostVer || 0);
   if (v !== TOCCV || !TOCC || TOCC.length !== C.MW * C.MH) { TOCCV = v; if (!TOCC || TOCC.length !== C.MW * C.MH) TOCC = new Int32Array(C.MW * C.MH); else TOCC.fill(0);
+    for (const G of (W.ghosts || [])) if (G.town) for (const k in G.town.lots) { const [i, j] = k.split(',').map(Number); const [lx, ly] = lotXY(G.town, i, j); for (let yy = ly - 1; yy <= ly + LOTW; yy++) for (let xx = lx - 1; xx <= lx + LOTW; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) TOCC[yy * C.MW + xx] = -1; }
     for (const T of W.tribes) if (T.alive && T.town) for (const k in T.town.lots) { const [i, j] = k.split(',').map(Number); const [lx, ly] = lotXY(T.town, i, j); for (let yy = ly - 1; yy <= ly + LOTW; yy++) for (let xx = lx - 1; xx <= lx + LOTW; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) TOCC[yy * C.MW + xx] = T.id; } }
   x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return 0; const o = TOCC[y * C.MW + x]; return o && o !== self ? o : 0;
 }
@@ -7247,6 +7472,171 @@ function mergeInto(T, O) {
   chron(3, `Die ${T.name} und die ${O.name} wachsen zusammen: Sie leben nun als eine Sippe${LO ? ` unter ${LO.name}` : ''}${moved ? `, ${moved} Häuser werden im gemeinsamen Dorf neu errichtet` : ''}.`, { tribe: O.id, npc: LT?.id });
 }
 
+// =====================================================================
+//  DÖRFER, DIE BLEIBEN
+//  Verlassene Häuser verschwinden nicht: Sie stehen leer, verfallen über
+//  Jahrzehnte zu Ruinen und zeigen, wo einst eine Sippe lebte. Neue Siedler
+//  und Eroberer ziehen in alte Häuser ein und richten sie wieder her.
+//  Dazu: Haupthaus, Straßen, Fackeln.
+// =====================================================================
+Object.assign(TECH, {
+  fackeln:   { cat: 'handwerk', name: 'Fackeln', icon: '🔥', req: ['feuer_machen'], D: 1600, ctx: { firework: 0.6, coldcamp: 0.2, experiment: 0.3, war: 0.4 }, desc: 'Ein Ast, umwickelt und mit Harz getränkt, brennt lange: Licht für Nachtwege, Wachen und Kriegszüge.', eff: 'Fackeln bei Nacht, Wölfe halten Abstand' },
+  wegebau:   { cat: 'wasser', name: 'Wege & Straßen', icon: '🛤', req: ['huette'], D: 6500, ctx: { carry: 1, build: 0.4, crowd: 0.4 }, cond: T => tPop(T, 25), condTxt: 'mind. 25 Menschen', desc: 'Festgestampfte, aufgeschüttete Erde zwischen den Häusern – später Kies und Pflaster. Auf Straßen geht man schneller.', eff: 'Straßen im Dorf: schneller unterwegs' },
+  haupthaus: { cat: 'ordnung', name: 'Haupthaus', icon: '🏛', req: ['huette'], D: 5500, ctx: { talk: 0.5, build: 0.4, crowd: 1, trade: 0.4 }, cond: T => tPop(T, 18), condTxt: 'mind. 18 Menschen', desc: 'Ein großes Langhaus am Platz: Hier versammeln sich die Angesehenen, hier wird beraten, gerichtet und mit Fremden verhandelt.', eff: 'Ratsversammlungen, Verhandlungen im Haupthaus', build: 'hall' },
+});
+TECH_IDS = Object.keys(TECH);
+TECH.fackeln.how = 'umwickelt einen Ast mit Bast, tränkt ihn in Harz – und trägt das Feuer in die Nacht';
+TECH.wegebau.how = 'schüttet Erde in die Gassen und stampft sie fest, damit man nicht im Schlamm versinkt';
+TECH.haupthaus.how = 'schlägt vor, ein großes Haus für alle Versammlungen zu bauen';
+TECH.fackeln.see = 'Fackeln in der Hand bei Nacht, an Toren und am Platz';
+TECH.wegebau.see = 'Straßen aus festgestampfter Erde, später Kies und Pflaster';
+TECH.haupthaus.see = 'Ein Langhaus am Platz mit langer Tafel und Ehrenplatz';
+BUILD_NEED.hall = 10; BUILD_NAME.hall = 'ihr Haupthaus';
+
+// ---------------------------------------------------------------- Häuser: im Raster, aber jedes etwas anders
+function lotHouse(P) {
+  const h1 = hash3(P.i * 31 + P.j, P.x0, P.y0), h2 = hash3(P.y0, P.i, P.x0 + 7);
+  const hh = h1 < 0.38 ? 3 : 4, dy = hh === 3 && h2 < 0.5 ? 1 : 0;
+  return { lx: P.x0, ly: P.y0 + dy, w: 4, h: hh };
+}
+
+// ---------------------------------------------------------------- Verlassene Dörfer
+function abandonTown(T, why) {
+  if (T.ghosted || !T.town) return;
+  T.ghosted = 1;
+  if (!T.huts.length && !T.storehouse && !(T.bld && T.bld.hall)) return;
+  const town = Object.assign({}, T.town); delete town.wall; delete town.reach; delete town.rect;
+  (W.ghosts || (W.ghosts = [])).push({ id: T.id, name: T.name, col: T.col, t: W.tick, why: why || 'leer', cx: T.cx, cy: T.cy, town, huts: T.huts.map(h => Object.assign({}, h)), store: T.storehouse, bld: T.bld ? Object.assign({}, T.bld) : null, pal: T.pal || 0, penR: T.penR });
+  if (W.ghosts.length > 220) W.ghosts.shift();
+  W.ghostVer = (W.ghostVer || 0) + 1;
+}
+const ghostAge = G => (W.tick - G.t) / C.TPY;
+// Wie verfallen ist ein Haus? 0 = leer, 1 = baufällig, 2 = Ruine
+function decayOf(h, G) { const y = ghostAge(G) / (h.stone ? 2.5 : h.mud ? 1.6 : 1); return y < 6 ? 0 : y < 22 ? 1 : 2; }
+function ghostsNear(x, y, r) { return (W.ghosts || []).filter(G => Math.abs(G.cx - x) < r && Math.abs(G.cy - y) < r && dist(G.cx, G.cy, x, y) < r); }
+// Neue Sippe zieht in die alten Häuser: Lage, Parzellen und Häuser werden übernommen
+function adoptGhost(T, G, how) {
+  const i = W.ghosts.indexOf(G); if (i < 0) return false;
+  if (T.town && !T.ghosted && (T.huts.length || T.storehouse)) abandonTown(T, 'fort');
+  W.ghosts.splice(i, 1); W.ghostVer = (W.ghostVer || 0) + 1;
+  T.cx = G.town.cx + 0.5; T.cy = G.town.cy + 0.5;
+  T.town = Object.assign({}, G.town, { lots: {} });
+  T.huts = []; let ruins = 0, fix = 0;
+  T.town.lots = Object.assign({}, G.town.lots);
+  for (const h of G.huts) {
+    const d = decayOf(h, G), P = T.town.lots[h.lot];
+    if (d >= 2 && P) { P.kind = 'bau'; P.prog = 3; P.stone = h.stone; P.mud = h.mud; ruins++; continue; } // nur noch Boden und Mauerreste: neu aufbauen
+    T.huts.push(Object.assign(h, { worn: d >= 1 ? W.tick : 0, furn: d >= 1 ? Math.min(h.furn ?? 7, 2) : h.furn })); if (d >= 1) fix++;
+  }
+  if (G.store && ghostAge(G) < 15) T.storehouse = G.store;
+  if (G.bld) { T.bld = Object.assign({}, G.bld); if (ghostAge(G) > 30) for (const k in T.bld) if (k !== 'hall' && k !== 'temple' && k !== 'wall') T.bld[k] = 0; }
+  T.pal = ghostAge(G) < 12 ? Math.round(G.pal * 0.6) : 0;
+  T.townVer = (T.townVer || 0) + 1; W.hutVer = (W.hutVer || 0) + 1; T.ghosted = 0;
+  const yrs = Math.round(ghostAge(G));
+  chron(3, how === 'conquer' ? `Die ${T.name} nehmen das Dorf der unterworfenen ${G.name} in Besitz.`
+    : `Die ${T.name} ziehen in die verlassenen Häuser der ${G.name}${yrs > 1 ? `, die vor ${yrs} Jahren hier lebten` : ''}.${fix ? ` ${fix} Häuser müssen ausgebessert werden` : ''}${ruins ? `${fix ? ',' : ''} ${ruins} Ruinen werden wieder aufgebaut` : ''}.`, { tribe: T.id });
+  return true;
+}
+// einmal am Tag: ausgestorbene oder fortgezogene Sippen hinterlassen ihr Dorf
+function villageDaily() {
+  for (const T of W.tribes) if (!T.alive && !T.ghosted && T.town) abandonTown(T, 'tot');
+  for (const T of W.tribes) if (T.alive) {
+    for (const h of T.huts) {
+      // Häuser nutzen sich ab und werden ausgebessert – nur wer sie lange verkommen lässt, verliert sie
+      if (!h.worn && rnd() < 0.0008 * (h.stone ? 0.3 : h.mud ? 0.5 : 1)) h.worn = W.tick;
+      if (h.worn && W.tick - h.worn > C.TPY * 2) { const P = T.town && T.town.lots[h.lot]; T.huts.splice(T.huts.indexOf(h), 1); if (P) { P.kind = 'bau'; P.prog = 3; P.stone = h.stone; P.mud = h.mud; } W.hutVer = (W.hutVer || 0) + 1; chron(1, `Ein Haus der ${T.name} ist eingestürzt – niemand hat es ausgebessert.`, { tribe: T.id }); break; }
+    }
+    if (TK(T, 'wegebau') && T.town && (T.roadT || 0) < W.tick - C.TPD * 10) planRoads(T);
+  }
+}
+
+// ---------------------------------------------------------------- Straßen
+// Zuerst die Gassen vor den Haustüren und am Platz, dann die übrigen Gassen; festgestampfte Erde, später Kies, dann Pflaster
+function roadLevel(T) { return TK(T, 'stadtplanung') || TK(T, 'lehmziegel') && TK(T, 'steinbau') ? 3 : TK(T, 'steinbau') ? 2 : 1; }
+function planRoads(T) {
+  T.roadT = W.tick;
+  const O = T.town, lv = roadLevel(T), out = [], seen = new Set(), R = W.road || (W.road = {});
+  const add = (x, y, pr) => { const k = y * C.MW + x; if (seen.has(k)) return; seen.add(k); if ((R[k] || 0) >= lv) return; const t = W.t[k]; if (t < T_SHORE || t === T_MOUNT || W.fields[k] || houseAt(x, y) || wallAt(x, y)) return; out.push([k, pr]); };
+  for (const key in O.lots) {
+    const L = O.lots[key]; if (key !== L.i + ',' + L.j || L.kind === 'bau' && !L.prog) continue;
+    const [x0, y0] = lotXY(O, L.i, L.j), w = (L.wl || 1) * LOT - 1, h = (L.hl || 1) * LOT - 1;
+    if (L.kind === 'plaza') { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) add(x, y, 0); continue; }
+    for (let x = x0 - 1; x <= x0 + w; x++) add(x, y0 + h, dist(x, y0 + h, O.cx, O.cy)); // Gasse vor der Tür
+    for (let y = y0 - 1; y <= y0 + h; y++) { add(x0 - 1, y, 30 + dist(x0, y, O.cx, O.cy)); add(x0 + w, y, 30 + dist(x0, y, O.cx, O.cy)); }
+    for (let x = x0 - 1; x <= x0 + w; x++) add(x, y0 - 1, 40 + dist(x, y0, O.cx, O.cy));
+  }
+  for (const g of (T.town && (T.pal || T.bld?.wall) ? townWall(T).gates : [])) add(g[0] | 0, g[1] | 0, 20);
+  out.sort((a, b) => a[1] - b[1]);
+  T.roadQ = out.slice(0, 200).map(o => o[0]);
+}
+function stepRoad(n, T, a) {
+  const R = W.road || (W.road = {}), lv = roadLevel(T);
+  if (a.stage === 0) {
+    while (T.roadQ && T.roadQ.length && (R[T.roadQ[0]] || 0) >= lv) T.roadQ.shift();
+    if (!T.roadQ || !T.roadQ.length) { n.act = null; return; }
+    a.k = T.roadQ.shift(); a.tx = (a.k % C.MW) + 0.5; a.ty = ((a.k / C.MW) | 0) + 0.5; a.stage = 1; a.t = 0; a.n = 0; return;
+  }
+  if (a.stage === 1) { if (moveToward(n, a.tx, a.ty, 1) || dist(n.x, n.y, a.tx, a.ty) < 0.5) { a.stage = 2; a.t = 0; } else if (++a.t > 200) n.act = null; return; }
+  a.wk = 1;
+  if (++a.t < (lv === 1 ? 6 : 9)) return;
+  if (lv >= 2) { if (T.store.stone < 1) { a.wk = 0; n.act = null; return; } T.store.stone -= 1; }
+  R[a.k] = lv; W.roadVer = (W.roadVer || 0) + 1; if (HOOKS.onRoad) HOOKS.onRoad(a.k);
+  if (!T.roads) { T.roads = 1; chron(2, `Die ${T.name} legen die erste Straße an – aus festgestampfter Erde.`, { tribe: T.id, npc: n.id }); }
+  if (++a.n >= 4) { a.wk = 0; n.act = null; return; }
+  a.stage = 0;
+}
+// Straßen sind schneller und werden bevorzugt
+const roadAt = i => (W.road && W.road[i]) || 0;
+
+// ---------------------------------------------------------------- Haupthaus
+// ein Langhaus über zwei Parzellen am Platz – es wird einmal gebaut und bleibt; mit neuem Wissen wird es nur ausgebessert
+function hallOf(T) {
+  if (!T.town || !((T.bld?.hall || 0) > 0)) return null;
+  const O = T.town; const P = Object.values(O.lots).find(L => L.kind === 'hall'); if (!P) return null;
+  return { lx: P.x0, ly: P.y0, w: P.w, h: P.h, x: P.cx, y: P.cy, lot: P.i + ',' + P.j, hall: 1, done: (T.bld.hall || 0) >= BUILD_NEED.hall };
+}
+function hallDone(T) { return T.town && (T.bld?.hall || 0) >= BUILD_NEED.hall; }
+function hallSeat(T, i) { const H = hallOf(T); if (!H) return null; const k = i % 8; return [H.lx + 1.5 + (k % 4) * 1.8, H.ly + 1.3 + Math.floor(k / 4) * 1.6]; }
+// Ratsversammlung: die Angesehenen sitzen im Haupthaus beisammen
+function stepCouncil(n, T, a) {
+  if (!hallDone(T)) { n.act = null; return; }
+  if (a.stage === 0) { const s = hallSeat(T, n.id); a.tx = s[0]; a.ty = s[1]; if (moveToward(n, a.tx, a.ty, 1) || dist(n.x, n.y, a.tx, a.ty) < 0.6) { a.stage = 1; a.t = 0; } else if (++a.t > 250) n.act = null; return; }
+  a.t++; n.social = Math.min(100, n.social + 1);
+  if (a.t % 4 === 0) { const H = hallOf(T); for (const id of T.members) { const m = NPC.get(id); if (m && m !== n && m.act && m.act.type === 'council' && m.act.stage === 1) { talk(n, m); break; } } }
+  if (a.t > 22) { n.prestige += 0.3; n.act = null; }
+}
+
+// ---------------------------------------------------------------- Fackeln
+// Wer trägt eine Fackel? Nachts unterwegs, auf Wache, im Kampf – wenn die Sippe Fackeln kennt
+function torchOf(n) {
+  const a = n.act; if (!a) return false;
+  const T = tribeOf(n); if (!T || !TK(T, 'fackeln') || ageY(n) < 12) return false;
+  const h = hourNow(); if (!(h >= 19.5 || h < 6)) return false;
+  if (a.type === 'sleep' || a.type === 'down' || a.type === 'hide' || a.type === 'rest' || a.type === 'council') return false;
+  return a.type === 'raid' || a.type === 'defend' || a.type === 'watch' || a.type === 'return' || a.type === 'bury' || (n.x !== n.px || n.y !== n.py) && !houseAt(n.x, n.y);
+}
+
+// ---------------------------------------------------------------- Eroberte Dörfer bleiben bewohnt
+// Ein Statthalter der Sieger bleibt mit einigen Kriegern im eroberten Dorf – die Unterworfenen leben weiter in ihren Häusern
+function holdConquered(T, E, rest, raiders) {
+  const pool = raiders.filter(m => m.alive !== false && m.tribe === T.id && m.id !== T.leader && ageY(m) >= 18 && fitToFight(m)).sort((a, b) => (b.tr.ehrgeiz + b.prestige / 50) - (a.tr.ehrgeiz + a.prestige / 50));
+  const L2 = pool[0]; if (!L2) return null;
+  const N = makeTribe(E.cx, E.cy, T);
+  const crew = [L2, ...pool.slice(1, 1 + Math.min(4, Math.floor(pool.length / 3)))];
+  for (const m of crew) { const i = T.members.indexOf(m.id); if (i >= 0) T.members.splice(i, 1); N.members.push(m.id); m.tribe = N.id; m.act = null; memo(m, `bleibt im eroberten Dorf der ${E.name}`); }
+  moveMembers(rest, E, N, `lebt nun unter ${L2.name}, dem Statthalter der ${T.name}`);
+  N.town = E.town; N.huts = E.huts; N.storehouse = E.storehouse; N.bld = E.bld; N.pal = E.pal; N.penR = E.penR; N.pen = E.pen; N.traps = E.traps || [];
+  N.store.food = Math.round(T.store.food * 0.15); T.store.food -= N.store.food;
+  E.town = null; E.huts = []; E.ghosted = 1; E.storehouse = null;
+  N.leader = L2.id; L2.notable = true; L2.prestige += 20;
+  N.cv = memberMean(N); N.rules = (T.rules || []).map(r => ({ ...r })); N.gov = bestGov(N).key; N.govSince = W.tick; initCulture(N);
+  N.vassalOf = T.id; N.rel[T.id] = 70; T.rel[N.id] = 70; N.treaties.push({ with: T.id, kind: 'buendnis', t: W.tick }); T.treaties.push({ with: N.id, kind: 'buendnis', t: W.tick });
+  for (const k in T.rel) if (+k !== N.id) { N.rel[k] = Math.round(T.rel[k] * 0.6); const X = TRIBE.get(+k); if (X) X.rel[N.id] = N.rel[k]; }
+  N.fire.lit = true; N.fire.fuel = 40; N.townVer = (E.townVer || 0) + 1; W.hutVer = (W.hutVer || 0) + 1;
+  chron(3, `${fullName(L2)} bleibt als Statthalter der ${T.name} im eroberten Dorf. Die unterworfenen ${E.name} leben weiter in ihren Häusern – nun als ${N.name}, den ${T.name} untertan.`, { tribe: N.id, npc: L2.id });
+  return N;
+}
+
 </script>
 <script type="text/plain" id="workerSrc">
 // =====================================================================
@@ -7321,6 +7711,7 @@ function splitWorld(groups) {
     S.fires = FULL.fires.filter(f => owner(f.x, f.y) === s);
     S.graves = FULL.graves.filter(f => owner(f.x, f.y) === s);
     S.corpses = (FULL.corpses || []).filter(f => owner(f.x, f.y) === s);
+    S.ghosts = (FULL.ghosts || []).filter(f => owner(f.cx, f.cy) === s);
     S.paintAll = (FULL.paintAll || []).filter(f => owner(f.x, f.y) === s);
     S.chron = []; S.dead = []; S.stats = [];
     S.nextId = FULL.nextId + s * 50000000;
@@ -7332,10 +7723,10 @@ function splitWorld(groups) {
 function mergeDumps(strs) {
   const D = strs.map(s => JSON.parse(s)), M = Object.assign({}, D[0]);
   const cat = k => D.flatMap(d => d[k] || []);
-  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'paintAll']) M[k] = cat(k);
+  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'ghosts', 'paintAll']) M[k] = cat(k);
   M.bushes = cat('bushes').sort((a, b) => a.id - b.id);
   M.dead = SH.master.dead.concat(cat('dead'));
-  for (const k of ['fields', 'res', 'cut', 'path', 'foot', 'beliefs', 'cults']) { M[k] = {}; for (const d of D) Object.assign(M[k], d[k] || {}); }
+  for (const k of ['fields', 'res', 'cut', 'path', 'foot', 'beliefs', 'cults', 'road']) { M[k] = {}; for (const d of D) Object.assign(M[k], d[k] || {}); }
   M.discovered = {}; for (const d of D) for (const k in d.discovered) if (!M.discovered[k] || d.discovered[k].t < M.discovered[k].t) M.discovered[k] = d.discovered[k];
   M.nextId = Math.max(...D.map(d => d.nextId)); M.tick = Math.max(...D.map(d => d.tick));
   M.chron = SH.master.chron; M.stats = SH.master.stats;
@@ -7389,8 +7780,8 @@ function onShard(s, m) {
 }
 function postMergedState(R, ownDirty) {
   const L = R.map(r => r.lite), M = Object.assign({}, SH.master.meta, L[0]);
-  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'paintAll', 'dead']) M[k] = L.flatMap(l => l[k] || []);
-  for (const k of ['fields', 'res', 'cut', 'path', 'beliefs', 'cults']) { M[k] = {}; for (const l of L) Object.assign(M[k], l[k] || {}); }
+  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'ghosts', 'paintAll', 'dead']) M[k] = L.flatMap(l => l[k] || []);
+  for (const k of ['fields', 'res', 'cut', 'path', 'beliefs', 'cults', 'road']) { M[k] = {}; for (const l of L) Object.assign(M[k], l[k] || {}); }
   M.discovered = {}; for (const l of L) for (const k in l.discovered) if (!M.discovered[k] || l.discovered[k].t < M.discovered[k].t) M.discovered[k] = l.discovered[k];
   // Jahresstatistik: Regionen zusammenzählen
   const ys = new Map(SH.master.stats.map(s => [s.y, s]));
@@ -7768,6 +8159,7 @@ const ACT_TXT = { fetch: 'holt etwas aus dem Lager',
   explore: 'erkundet die Gegend', watch: 'beobachtet einen Fremden im Revier', diplo: 'reist als Gesandter', experiment: 'tüftelt herum', craft: 'stellt etwas her', build: 'baut eine Hütte', ritual: 'vollzieht ein Ritual',
   preach: 'predigt seinen Glauben', paint: 'malt an eine Felswand', heal: 'sucht Heilkräuter', lightfire: 'versucht, Feuer zu entfachen',
   fetchfire: 'holt Glut für das Lager', raid: 'zieht in den Kampf', return: 'kehrt heim', idle: 'schaut sich um',
+  council: 'berät sich mit den Angesehenen im Haupthaus', road: 'legt eine Straße an',
   hide: 'versteckt sich vor den Angreifern', down: 'liegt verwundet am Boden', bury: 'kümmert sich um einen Toten',
 };
 const CTX_TXT = { craft: 'Herstellen von Dingen', fishing: 'Fischen', store: 'Vorräte anlegen', winter: 'Überwintern', paint: 'Malen', trade: 'Besuch bei anderen Sippen', talk: 'Gespräch', farm: 'Feldarbeit', sheepnear: 'Mufflons in der Nähe', cattlenear: 'Auerochsen in der Nähe', pignear: 'Wildschweine in der Nähe', donkeynear: 'Wildesel in der Nähe', herd: 'Vieh hüten', woodcut: 'Holz schlagen', cook: 'Kochen und Essen', spin: 'Fäden drehen', potter: 'Töpfern', irrigate: 'Feldarbeit am Fluss', carry: 'Lasten schleppen', count: 'Vorräte zählen', sky: 'Sterne beobachten', temple: 'Rituale in der Siedlung', crowd: 'Leben in großer Gemeinschaft', theft: 'Streit um Besitz', war: 'Kampf', stone: 'Steine sammeln', hunt: 'Jagen', knap: 'Feuerstein bearbeiten', firework: 'Holz ins Feuer legen', eatfire: 'Essen am Feuer', coldhide: 'Frieren mit Fellen', gather: 'Sammeln', water: 'Arbeiten am Wasser', coldcamp: 'Frieren im Lager', wood: 'Holz schlagen', sickgather: 'Sammeln, wenn jemand krank ist', gathercamp: 'Sammeln nahe dem Lager', grief: 'Trauer um einen Toten', ritual: 'Rituale', rest: 'Gespräche am Feuer', clayfire: 'Lehm nahe am Feuer', wolfnear: 'Jagen nahe bei Wölfen', waterblock: 'Festsitzen am Fluss', build: 'Bauen', raided: 'Überfallen werden', goatnear: 'Jagen nahe bei Wildziegen' };
@@ -8055,6 +8447,8 @@ function draw(t) {
     sprC(ctx, 'bush', px, py, 1.1); if (season === 3) { ctx.fillStyle = 'rgba(220,225,230,.45)'; ctx.fillRect(px - 8, py - 4, 16, 9); }
     if (b.f > 0 && season !== 3) { ctx.fillStyle = '#c23b4a'; const k = Math.min(5, Math.ceil(b.f / 3)); for (let i = 0; i < k; i++) { ctx.beginPath(); ctx.arc(px + Math.cos(i * 2.4) * 2.6, py + Math.sin(i * 2.4) * 2.6, 1.2, 0, 7); ctx.fill(); } }
   }
+  if (Z > 0.3) drawRoads(x0, y0, x1, y1);
+  if (Z > 0.3) for (const G of (W.ghosts || [])) if (inView(G.cx, G.cy, 30)) drawGhost(G);
   // Gräber
   for (const g of W.graves) { if (!inView(g.x, g.y)) continue; drawGrave(g); }
   if (Z > 0.45) for (const c of (W.corpses || [])) { if (c.carry || !inView(c.x, c.y)) continue; drawCorpse(c, c.x * TS, c.y * TS); }
@@ -8094,6 +8488,8 @@ function draw(t) {
     if (T.town) for (const k in T.town.lots) { const P = T.town.lots[k]; if (P.kind === 'bau' && k === P.i + ',' + P.j && P.prog) drawSite(P, T); }
     for (const h of T.huts) h.lx !== undefined ? drawHouse(h, T) : h.mud ? drawMudHouse(h.x * TS, h.y * TS, h.rot, T.col) : drawHut(h.x * TS, h.y * TS, h.rot, T.col, h.stone);
     drawBuildings(T, px, py);
+    if (T.town && (T.bld?.hall || 0) > 0) drawHall(T);
+    if (T.town) drawDecor(T, px, py);
     // Feuer
     ctx.fillStyle = '#3a3633'; ctx.beginPath(); ctx.arc(px, py, 7, 0, 7); ctx.fill();
     for (let i = 0; i < 8; i++) { ctx.fillStyle = '#6f6a63'; ctx.beginPath(); ctx.arc(px + Math.cos(i * 0.785) * 7, py + Math.sin(i * 0.785) * 7, 1.8, 0, 7); ctx.fill(); }
@@ -8118,18 +8514,19 @@ function draw(t) {
   ctx.restore();
 
   // Nacht & Licht
-  const h = hourNow();
-  let dark = 0;
-  if (h >= 20 || h < 6) dark = h >= 20 ? Math.min(1, (h - 20) / 1.5) : h < 5 ? 1 : 1 - (h - 5);
-  if (ui.speed >= 5) dark = 0; // kein Tag/Nacht-Flackern bei hohem Tempo
-  if (dark > 0) {
+  const { dark, dusk } = dayLight();
+  if (dusk > 0.01) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = `rgba(255,120,50,${0.13 * dusk})`; ctx.fillRect(0, 0, VW * DPR, VH * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); }
+  if (dark > 0.01) {
     nctx.setTransform(1, 0, 0, 1, 0, 0); nctx.globalCompositeOperation = 'source-over'; nctx.clearRect(0, 0, nightC.width, nightC.height);
-    nctx.fillStyle = `rgba(8,14,35,${0.62 * dark})`; nctx.fillRect(0, 0, nightC.width, nightC.height);
+    nctx.fillStyle = `rgba(${8 + Math.round(30 * dusk)},${14 + Math.round(6 * dusk)},${35 + Math.round(20 * dusk)},${0.74 * dark})`; nctx.fillRect(0, 0, nightC.width, nightC.height);
     nctx.globalCompositeOperation = 'destination-out';
     const lights = [];
     for (const T of W.tribes) if (T.alive && T.fire.lit) lights.push([T.cx, T.cy, 110]);
     for (const f of W.fires) lights.push([f.x, f.y, 90]);
-    for (const n of W.npcs) if (n.carryFire) lights.push([n.x, n.y, 40]);
+    for (const n of W.npcs) if (n.carryFire) lights.push([n.x, n.y, 40]); else if (n._torch) { const [x, y] = lerpPos(n); lights.push([x, y, 34]); }
+    for (const T of W.tribes) if (T.alive && T.town && TK(T, 'fackeln')) for (const p of townTorches(T)) lights.push([p[0], p[1] - 0.6, 30]);
+    for (const T of W.tribes) if (T.alive && hallDone(T)) { const H = hallOf(T); if (H) lights.push([H.x, H.y, 36]); }
+    for (const T of W.tribes) if (T.alive) for (const h of T.huts) if (h.lx !== undefined && (h.lx + h.ly) % 3 === 0) lights.push([h.x, h.y, 13]);
     for (const [lx, ly, r0] of lights) {
       const [sx, sy] = w2s(lx, ly); const r = r0 * cam.z * DPR * (0.95 + Math.sin(FT * 9 + lx) * 0.04);
       const gr = nctx.createRadialGradient(sx * DPR, sy * DPR, 0, sx * DPR, sy * DPR, r);
@@ -8263,7 +8660,8 @@ function drawTownGround(T) {
     if (P.kind === 'werk' && k === P.i + ',' + P.j) { if (TK(T, 'toepferscheibe')) { const c = pxCanvas('pwheel', PWHEEL_PX, FURN_PAL); ctx.drawImage(c, P.x0 * TS + 26, P.y0 * TS + 10); } if (TK(T, 'lehmziegel')) for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) { ctx.fillStyle = '#b8925c'; ctx.fillRect(P.x0 * TS + 6 + i * 9, P.y0 * TS + 40 + r * 7, 7, 4); ctx.fillStyle = '#d4b07a'; ctx.fillRect(P.x0 * TS + 6 + i * 9, P.y0 * TS + 40 + r * 7, 7, 1); } }
     if (P.kind === 'werk' && k === P.i + ',' + P.j && TK(T, 'rad')) { const wc = pxCanvas('wheel', WHEEL_PX, FURN_PAL); ctx.drawImage(wc, P.x0 * TS + 26, (P.y0 + P.h) * TS - 14); ctx.drawImage(wc, P.x0 * TS + 30, (P.y0 + P.h) * TS - 12); }
     if (P.kind === 'store' && k === P.i + ',' + P.j && TK(T, 'wagen')) { const c = pxCanvas('cart', CART_PX, { o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', r: '#8a6a44', R: '#4a3424' }); ctx.drawImage(c, (P.x0 + P.w) * TS + 1, (P.y0 + 2) * TS); }
-    if (P.kind === 'cem' && k === P.i + ',' + P.j) drawCemLot(P, T); }
+    if (P.kind === 'cem' && k === P.i + ',' + P.j) drawCemLot(P, T);
+    if (P.kind === 'garden' && k === P.i + ',' + P.j) drawGarden(P, T); }
 }
 const roofView = () => cam.z < 1.15;
 function houseStyle(h) { return h.stone ? 'stone' : h.mud ? 'mud' : 'hut'; }
@@ -8478,6 +8876,8 @@ function drawNpc(n, px, py, selected, detail) {
   if (carry > 0 && detail) { const bx = n.face === 'up' ? 0 : -dir * 4, by = n.face === 'up' ? -6 : -4; ctx.fillStyle = n.tools.korb > 0 ? '#b8935a' : '#7a5a34'; ctx.fillRect(bx - 2.5, by, 5, 4); if (n.inv.meat) { ctx.fillStyle = '#a3311f'; ctx.fillRect(bx - 1.5, by, 3, 2); } else { ctx.fillStyle = '#c23b4a'; ctx.fillRect(bx - 1.5, by, 1, 1); ctx.fillRect(bx + 0.5, by + 1, 1, 1); } }
   if (n.inv.wood > 0 && detail) { ctx.fillStyle = '#6b4a2b'; ctx.fillRect(-5, -5, 10, 1.5); ctx.fillRect(-4, -3.5, 8, 1.5); }
   if (n.carryFire) drawFlame(dir * 6, -8, 0.35);
+  n._torch = detail !== null && typeof torchOf === 'function' && torchOf(n);
+  if (n._torch && !n.carryFire) { const tx = n.face === 'side' ? (n.flip ? -5 : 5) : -5; ctx.fillStyle = '#5a3d22'; ctx.fillRect(tx - 0.5, -11, 1.5, 9); ctx.fillStyle = '#3a2a1a'; ctx.fillRect(tx - 1, -12, 2.5, 2); drawFlame(tx + 0.3, -13, 0.28); }
   if (a && a.loot > 0 && detail) { ctx.fillStyle = '#8a6a44'; ctx.beginPath(); ctx.ellipse(-dir * 4, -6, 4, 3.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#6a4a2a'; ctx.fillRect(-dir * 4 - 1, -10, 2, 2); }
   if (a && a.type === 'bury' && a.stage === 1 && detail) { const c = (W.corpses || []).find(c => c.id === a.corpse); if (c) { ctx.save(); ctx.translate(0, -12); ctx.scale(0.85, 0.85); drawCorpse(c, 0, 0, true); ctx.restore(); } }
   // Status-Symbol
@@ -8815,7 +9215,7 @@ function hover(e) {
   const tip = $('tip'); const { n, wx, wy } = pickAt(e.clientX, e.clientY);
   let txt = '';
   if (n) txt = `<b>${esc(n.name)}</b> · ${esc(actText(n))}`;
-  else { const a = W.animals.find(a => dist(a.x, a.y, wx, wy) < 0.7); if (a) txt = a.k === 'goat' ? (a.tribe ? 'Ziege der ' + (TRIBE.get(a.tribe)?.name || '?') : 'Wildziege') : a.k === 'deer' ? 'Hirsch' : a.k === 'horse' ? 'Wildpferd' : a.owner ? 'Hund von ' + (NPC.get(a.owner)?.name || '?') : 'Wolf'; else { const b = bushesNear(wx, wy, 0.6)[0]; if (b) txt = b.f > 0 ? `Beerenstrauch (${b.f})` : 'Abgeerntetes Gebüsch'; else { const p = (W.paintAll || []).find(p => dist(p.x, p.y, wx, wy) < 0.8); if (p) txt = `Felsbild von ${esc(p.by)}${p.k ? ' – zeigt ' + TECH[p.k].name : ''}`; else { const g = W.graves.find(g => dist(g.x, g.y, wx, wy) < 0.6); if (g) txt = `Grab von ${esc(g.name)}`; else { const fi = (wy | 0) * C.MW + (wx | 0), f = W.fields[fi]; if (f) txt = `Feld der ${esc(TRIBE.get(f.tr)?.name || '?')} – ${['brach', 'frisch gesät', 'wächst', 'reif zur Ernte'][f.st]}`; else if (W.path[fi]) txt = ['', 'Trampelpfad', 'ausgetretener Pfad', 'viel begangener Weg'][W.path[fi]]; } } } } }
+  else { const a = W.animals.find(a => dist(a.x, a.y, wx, wy) < 0.7); if (a) txt = a.k === 'goat' ? (a.tribe ? 'Ziege der ' + (TRIBE.get(a.tribe)?.name || '?') : 'Wildziege') : a.k === 'deer' ? 'Hirsch' : a.k === 'horse' ? 'Wildpferd' : a.owner ? 'Hund von ' + (NPC.get(a.owner)?.name || '?') : 'Wolf'; else { const b = bushesNear(wx, wy, 0.6)[0]; if (b) txt = b.f > 0 ? `Beerenstrauch (${b.f})` : 'Abgeerntetes Gebüsch'; else { const p = (W.paintAll || []).find(p => dist(p.x, p.y, wx, wy) < 0.8); if (p) txt = `Felsbild von ${esc(p.by)}${p.k ? ' – zeigt ' + TECH[p.k].name : ''}`; else { const g = W.graves.find(g => dist(g.x, g.y, wx, wy) < 0.6); const G = !g && (W.ghosts || []).find(G => G.huts.some(h => wx >= h.lx && wx < h.lx + h.w && wy >= h.ly && wy < h.ly + h.h)); if (G) { const y = Math.round(ghostAge(G)); txt = `${G.huts.some(h => decayOf(h, G) >= 2) ? 'Ruinen' : 'Verlassene Häuser'} der ${esc(G.name)} – ${G.why === 'fort' ? 'fortgezogen' : 'ausgestorben'} vor ${y < 1 ? 'weniger als einem Jahr' : y === 1 ? 'einem Jahr' : y + ' Jahren'}`; } else if (g) txt = `Grab von ${esc(g.name)}${g.full && g.full !== g.name ? ' (' + esc(g.full) + ')' : ''}`; else { const fi = (wy | 0) * C.MW + (wx | 0), f = W.fields[fi]; if (f) txt = `Feld der ${esc(TRIBE.get(f.tr)?.name || '?')} – ${['brach', 'frisch gesät', 'wächst', 'reif zur Ernte'][f.st]}`; else if (W.path[fi]) txt = ['', 'Trampelpfad', 'ausgetretener Pfad', 'viel begangener Weg'][W.path[fi]]; } } } } }
   if (txt) { tip.innerHTML = txt; tip.style.display = 'block'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 12 + 'px'; } else tip.style.display = 'none';
 }
 cv.addEventListener('pointerleave', () => $('tip').style.display = 'none');
@@ -9119,6 +9519,140 @@ function drawSite(P, T) {
   // Baumaterial liegt bereit
   for (let i = 0; i < Math.max(0, 3 - Math.floor(pr / 4)); i++) tex(ctx, 'logEnd', X + Wd + 1, Y + 6 + i * 7, 6, 6);
   if (st === 'stone' && pr < 7) for (let i = 0; i < 3; i++) { ctx.fillStyle = '#7e7a74'; ctx.fillRect(X - 7, Y + 8 + i * 6, 5, 4); ctx.fillStyle = '#a8a39b'; ctx.fillRect(X - 7, Y + 8 + i * 6, 4, 1); }
+}
+
+// =====================================================================
+//  Tag und Nacht fließend · Straßen · Haupthaus · Dorfschmuck · Ruinen
+// =====================================================================
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+function dayLight() {
+  if (!W) return { dark: 0, dusk: 0 };
+  const hf = (((W.tick + (ALPHA || 0)) % C.TPD) + C.TPD) % C.TPD * 24 / C.TPD;
+  let dark = hf >= 12 ? smooth(18.3, 22, hf) : 1 - smooth(4.3, 7.6, hf);
+  let dusk = Math.max(0, 1 - Math.abs(hf - 19.2) / 2.2) + Math.max(0, 1 - Math.abs(hf - 5.8) / 1.8) * 0.7;
+  if (ui.speed >= 5) { dark = 0.12; dusk = 0; } // bei hohem Tempo kein Flackern: gleichmäßiges Dämmerlicht
+  return { dark, dusk: clamp(dusk, 0, 1) };
+}
+// ---------------------------------------------------------------- Straßen
+function drawRoads(x0, y0, x1, y1) {
+  const R = W.road; if (!R) return;
+  for (const k in R) {
+    const i = +k, x = i % C.MW, y = (i / C.MW) | 0; if (x < x0 - 1 || x > x1 + 1 || y < y0 - 1 || y > y1 + 1) continue;
+    const lv = R[k], X = x * TS, Y = y * TS, h = hash(x + 3, y + 9);
+    if (lv === 1) { // aufgeschüttete, festgestampfte Erde
+      ctx.fillStyle = '#a5875a'; ctx.fillRect(X, Y, TS, TS); ctx.fillStyle = '#8f7149'; ctx.fillRect(X + (h * 9 | 0), Y + 3, 3, 1); ctx.fillRect(X + 4, Y + 10 + (h * 4 | 0), 2, 1); ctx.fillRect(X + 11, Y + (h * 12 | 0), 1, 2);
+      ctx.fillStyle = '#b89a6a'; ctx.fillRect(X + 2 + (h * 10 | 0), Y + 7, 2, 1);
+      const e = (dx, dy) => !R[(y + dy) * C.MW + x + dx]; ctx.fillStyle = 'rgba(90,70,40,.35)'; if (e(0, -1)) ctx.fillRect(X, Y, TS, 1); if (e(0, 1)) ctx.fillRect(X, Y + TS - 1, TS, 1); if (e(-1, 0)) ctx.fillRect(X, Y, 1, TS); if (e(1, 0)) ctx.fillRect(X + TS - 1, Y, 1, TS);
+    } else if (lv === 2) { // Kies
+      ctx.fillStyle = '#9c9488'; ctx.fillRect(X, Y, TS, TS); for (let j = 0; j < 7; j++) { const a = hash(x * 7 + j, y * 3 + j); ctx.fillStyle = j % 2 ? '#b8b0a2' : '#7e776c'; ctx.fillRect(X + (a * 15 | 0), Y + (hash(j + x, y - j) * 15 | 0), 1, 1); }
+    } else { // Pflaster
+      ctx.fillStyle = '#6e6a64'; ctx.fillRect(X, Y, TS, TS); ctx.fillStyle = '#9a958d'; for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) ctx.fillRect(X + c * 8 + (r % 2) * 4 - (r % 2 && c ? 8 : 0) + 1, Y + r * 4 + 1, 6, 3);
+    }
+  }
+}
+// ---------------------------------------------------------------- Haupthaus: ein Langhaus über zwei Parzellen
+function drawHall(T) {
+  const H = hallOf(T); if (!H) return;
+  const X = H.lx * TS, Y = H.ly * TS, Wd = H.w * TS, Hd = H.h * TS, pr = Math.min(1, (T.bld.hall || 0) / BUILD_NEED.hall), door = X + 2 * TS;
+  const st = TK(T, 'lehmziegel') ? 'mud' : TK(T, 'steinbau') ? 'stone' : 'hut';
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(X + 3, Y + 4, Wd, Hd);
+  if (pr < 1) { // Baustelle: Pfosten, Boden, Wände wachsen
+    ctx.fillStyle = '#5a3d22'; for (let i = 0; i <= 8; i++) if (i / 8 <= pr * 2) { ctx.fillRect(X + i * (Wd - 3) / 8, Y - 4, 3, 7); ctx.fillRect(X + i * (Wd - 3) / 8, Y + Hd - 4, 3, 7); }
+    if (pr > 0.3) { ctx.fillStyle = st === 'stone' ? patt(ctx, 'stoneFloor') : patt(ctx, 'dirtFloor'); ctx.fillRect(X, Y, Wd * Math.min(1, (pr - 0.3) / 0.3), Hd); }
+    if (pr > 0.6) { ctx.fillStyle = patt(ctx, st === 'stone' ? 'cobble' : 'bark'); ctx.fillRect(X, Y, Wd * Math.min(1, (pr - 0.6) / 0.4), 9); }
+    for (let i = 0; i < 4; i++) tex(ctx, 'logEnd', X + Wd + 2, Y + 4 + i * 7, 6, 6);
+    return;
+  }
+  if (roofView()) {
+    ctx.fillStyle = st === 'hut' ? patt(ctx, 'hay') : st === 'mud' ? '#d4b07a' : patt(ctx, 'cobble'); ctx.fillRect(X - 3, Y - 3, Wd + 6, Hd + 4);
+    ctx.fillStyle = 'rgba(90,60,20,.35)'; for (let i = 3; i < Hd; i += 6) ctx.fillRect(X - 3, Y + i, Wd + 6, 1);
+    ctx.fillStyle = st === 'hut' ? '#7a5a2a' : '#8a7a5a'; ctx.fillRect(X - 3, Y + Hd / 2 - 2, Wd + 6, 4); ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(X - 3, Y + Hd - 4, Wd + 6, 4);
+    for (const gx of [X + 2, X + Wd - 6]) { ctx.fillStyle = '#4a3020'; ctx.fillRect(gx, Y - 8, 4, 6); ctx.fillStyle = T.col; ctx.fillRect(gx + 1, Y - 7, 2, 3); } // geschnitzte Giebel
+    ctx.fillStyle = '#2a1e16'; ctx.fillRect(door + 3, Y + Hd - 9, 10, 9);
+    ctx.fillStyle = T.col; ctx.fillRect(X + Wd / 2 - 6, Y - 6, 12, 5);
+    return;
+  }
+  ctx.fillStyle = st === 'stone' ? patt(ctx, 'stoneFloor') : st === 'mud' ? '#b4906a' : patt(ctx, 'dirtFloor'); ctx.fillRect(X, Y, Wd, Hd);
+  // lange Feuerstelle in der Mitte, Bänke und Tafel, Ehrenplatz an der Stirnseite
+  const fy = Y + Hd * 0.5; ctx.fillStyle = '#5a5650'; ctx.fillRect(X + 34, fy - 4, Wd - 68, 8); ctx.fillStyle = '#2a201a'; ctx.fillRect(X + 36, fy - 2, Wd - 72, 4);
+  if (T.fire.lit) for (let i = 0; i < 3; i++) drawFlame(X + 44 + i * (Wd - 88) / 2, fy, 0.45);
+  ctx.fillStyle = '#8a6440'; ctx.fillRect(X + 18, Y + 12, Wd - 36, 4); ctx.fillRect(X + 18, Y + Hd - 18, Wd - 36, 4); // Bänke
+  ctx.fillStyle = '#6a4424'; for (let i = 0; i < 6; i++) { ctx.fillRect(X + 22 + i * (Wd - 48) / 5, Y + 16, 2, 2); ctx.fillRect(X + 22 + i * (Wd - 48) / 5, Y + Hd - 14, 2, 2); }
+  ctx.fillStyle = '#5a3d22'; ctx.fillRect(X + Wd - 16, fy - 7, 9, 14); ctx.fillStyle = T.col; ctx.fillRect(X + Wd - 15, fy - 6, 7, 5); ctx.fillStyle = '#e0b03c'; ctx.fillRect(X + Wd - 13, fy - 9, 3, 2); // Hochsitz
+  ctx.fillStyle = T.col; for (const bx of [X + 6, X + Wd - 26]) { ctx.fillRect(bx, Y + 2, 6, 10); ctx.fillStyle = '#efe6cc'; ctx.fillRect(bx + 2, Y + 5, 2, 2); ctx.fillStyle = T.col; } // Banner
+  const wallFace = (x, y, w, hh) => { if (st === 'mud') brick(x, y, w, hh, '#b8925c', '#9c7a4a'); else { ctx.fillStyle = patt(ctx, st === 'stone' ? 'cobble' : 'bark'); ctx.fillRect(x, y, w, hh); } };
+  wallFace(X, Y, Wd, 9);
+  const side = st === 'mud' ? '#a8844f' : st === 'stone' ? '#6a6a72' : '#4a3020', cap = st === 'mud' ? '#d4b07a' : st === 'stone' ? '#8a8a90' : '#6a4a2a';
+  ctx.fillStyle = side; ctx.fillRect(X, Y - 3, 3, Hd + 3); ctx.fillRect(X + Wd - 3, Y - 3, 3, Hd + 3);
+  ctx.fillRect(X, Y + Hd - 3, door - X, 4); ctx.fillRect(door + TS, Y + Hd - 3, X + Wd - door - TS, 4);
+  ctx.fillStyle = cap; ctx.fillRect(X, Y + Hd - 4, door - X, 1); ctx.fillRect(door + TS, Y + Hd - 4, X + Wd - door - TS, 1);
+  if (st === 'hut') { ctx.fillStyle = '#5a3d22'; for (let i = 2; i < Hd; i += 7) { ctx.fillRect(X - 1, Y + i, 5, 1); ctx.fillRect(X + Wd - 4, Y + i, 5, 1); } }
+}
+// ---------------------------------------------------------------- Gärten und Dorfschmuck
+function drawGarden(P, T) {
+  const X = P.x0 * TS, Y = P.y0 * TS, Wd = P.w * TS, Hd = P.h * TS;
+  const veg = TK(T, 'ackerbau') || TK(T, 'huelsen');
+  for (let r = 0; r < 5; r++) { ctx.fillStyle = '#6b4a2b'; ctx.fillRect(X + 6, Y + 8 + r * 11, Wd - 12, 5); for (let c = 0; c < 7; c++) { const h = hash(P.x0 + c, P.y0 + r); ctx.fillStyle = veg ? (h < 0.5 ? '#4f8a3a' : '#6fae45') : (h < 0.33 ? '#e8c840' : h < 0.66 ? '#c84a6a' : '#efe6cc'); ctx.fillRect(X + 9 + c * 7, Y + 8 + r * 11, veg ? 3 : 2, veg ? 3 : 2); } }
+  ctx.strokeStyle = '#7a5532'; ctx.lineWidth = 1; ctx.strokeRect(X + 3.5, Y + 3.5, Wd - 7, Hd - 7); // Flechtzaun
+  ctx.fillStyle = '#5a3d22'; for (let x = 3; x < Wd - 3; x += 6) { ctx.fillRect(X + x, Y + 2, 1, 4); ctx.fillRect(X + x, Y + Hd - 6, 1, 4); }
+}
+// Fackeln an den Toren und am Platz
+function townTorches(T) {
+  const out = [], O = T.town; if (!O) return out;
+  out.push([O.cx - 2.6, O.cy - 2.4], [O.cx + 2.4, O.cy - 2.4], [O.cx - 2.6, O.cy + 2.2], [O.cx + 2.4, O.cy + 2.2]);
+  if ((T.pal || 0) >= 12 || (T.bld?.wall || 0) > 0) for (const g of townWall(T).gates) { const [nx, ny] = GATE_N[g[2]]; if (nx) { out.push([g[0], g[1] - 1.6]); out.push([g[0], g[1] + 1.6]); } else { out.push([g[0] - 1.6, g[1]]); out.push([g[0] + 1.6, g[1]]); } }
+  return out;
+}
+function drawDecor(T, px, py) {
+  const O = T.town, pop = T.members.length, night = dayLight().dark > 0.3;
+  // Sitzbalken rund ums Feuer
+  if (T.huts.length) for (let i = 0; i < 3; i++) { const a = i / 3 * 6.283 + 0.4, x = px + Math.cos(a) * 20, y = py + Math.sin(a) * 14; ctx.save(); ctx.translate(x, y); ctx.rotate(a + 1.57); ctx.fillStyle = '#6b4a2b'; ctx.fillRect(-7, -2, 14, 4); ctx.fillStyle = '#8a6440'; ctx.fillRect(-7, -2, 14, 1); ctx.restore(); }
+  // Pfahl mit Schnitzereien in Sippenfarben, wo man an Geister glaubt oder Bilder malt
+  if (TK(T, 'malerei') || Object.keys(T.beliefs || {}).length || pop >= 25) { const x = px + 26, y = py - 30; ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x - 2, y + 22, 8, 3); ctx.fillStyle = '#6b4a2b'; ctx.fillRect(x, y, 5, 24); ctx.fillStyle = T.col; ctx.fillRect(x, y + 3, 5, 3); ctx.fillRect(x, y + 12, 5, 2); ctx.fillStyle = '#efe6cc'; ctx.fillRect(x + 1, y + 7, 1, 1); ctx.fillRect(x + 3, y + 7, 1, 1); ctx.fillStyle = '#2a1e1a'; ctx.fillRect(x + 1, y + 9, 3, 1); ctx.fillStyle = '#8a6440'; ctx.fillRect(x - 3, y + 1, 11, 2); }
+  // Brunnen am Platz für größere Dörfer
+  if (pop >= 30 && (TK(T, 'steinbau') || TK(T, 'lehmziegel'))) { const x = px - 34, y = py - 26; ctx.fillStyle = '#6e6a64'; ctx.beginPath(); ctx.ellipse(x, y, 8, 6, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#2a4a6a'; ctx.beginPath(); ctx.ellipse(x, y, 5, 3.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#5a3d22'; ctx.fillRect(x - 8, y - 12, 2, 12); ctx.fillRect(x + 6, y - 12, 2, 12); ctx.fillRect(x - 8, y - 13, 16, 2); }
+  // vor den Häusern: Blumen, Holzscheite, Fellrahmen, Töpfe, Heu
+  for (const h of T.huts) {
+    if (h.lx === undefined) continue; const k = hash(h.lx + 5, h.ly + 11), dx = (h.lx + (k < 0.5 ? 0.4 : h.w - 0.9)) * TS, dy = (h.ly + h.h + 0.25) * TS;
+    if (k < 0.2) { ctx.fillStyle = '#4f8a3a'; ctx.fillRect(dx, dy, 8, 3); ctx.fillStyle = '#e8c840'; ctx.fillRect(dx + 1, dy, 1, 1); ctx.fillStyle = '#c84a6a'; ctx.fillRect(dx + 4, dy, 1, 1); ctx.fillRect(dx + 6, dy + 1, 1, 1); }
+    else if (k < 0.4) { for (let i = 0; i < 3; i++) tex(ctx, 'logEnd', dx + i * 4, dy - (i === 2 ? 3 : 0), 5, 5); }
+    else if (k < 0.55 && TK(T, 'fellkleidung')) { ctx.fillStyle = '#5a3d22'; ctx.fillRect(dx, dy - 8, 1, 10); ctx.fillRect(dx + 8, dy - 8, 1, 10); ctx.fillRect(dx, dy - 8, 9, 1); ctx.fillStyle = '#9b7a55'; ctx.fillRect(dx + 1, dy - 7, 7, 6); }
+    else if (k < 0.7 && TK(T, 'toepfern')) { ctx.fillStyle = '#a0583a'; ctx.beginPath(); ctx.arc(dx + 3, dy + 1, 2.5, 0, 7); ctx.fill(); ctx.fillStyle = '#c87a50'; ctx.fillRect(dx + 2, dy - 2, 2, 1); }
+    else if (k < 0.8 && TK(T, 'ackerbau')) { ctx.fillStyle = '#d8b860'; ctx.fillRect(dx, dy - 2, 7, 5); ctx.fillStyle = '#b8984a'; ctx.fillRect(dx, dy + 1, 7, 1); }
+  }
+  // Fahnen in Sippenfarbe am Platz
+  if (pop >= 20) for (const [fx, fy] of [[px - 40, py + 26], [px + 40, py + 26]]) { ctx.fillStyle = '#5a3d22'; ctx.fillRect(fx, fy - 20, 2, 22); const w = Math.sin(FT * 3 + fx) * 1.5; ctx.fillStyle = T.col; ctx.beginPath(); ctx.moveTo(fx + 2, fy - 20); ctx.lineTo(fx + 11, fy - 18 + w); ctx.lineTo(fx + 2, fy - 14); ctx.fill(); }
+  // Fackeln an Toren und am Platz
+  if (TK(T, 'fackeln')) for (const [x, y] of townTorches(T)) { const X = x * TS, Y = y * TS; ctx.fillStyle = '#4a3420'; ctx.fillRect(X - 1, Y - 12, 2, 13); ctx.fillStyle = '#2a1e1a'; ctx.fillRect(X - 2, Y - 13, 4, 2); if (night) drawFlame(X, Y - 14, 0.35); }
+  // Vogelscheuchen auf den Feldern
+  if (TK(T, 'ackerbau') && T.tc) { let c = 0; for (const k in W.fields) { const f = W.fields[k]; if (f.tr !== T.id || f.st < 1 || hash(k % 997, 3) > 0.04 || c++ > 4) continue; const x = (k % C.MW) * TS + 8, y = ((k / C.MW) | 0) * TS + 8; ctx.fillStyle = '#5a3d22'; ctx.fillRect(x, y - 12, 1, 14); ctx.fillRect(x - 5, y - 8, 11, 1); ctx.fillStyle = '#8a6440'; ctx.fillRect(x - 3, y - 8, 7, 5); ctx.fillStyle = '#d8b860'; ctx.fillRect(x - 1, y - 13, 3, 3); } }
+}
+// ---------------------------------------------------------------- Verlassene Häuser und Ruinen
+const GHOST_T = {};
+function drawGhost(G) {
+  const age = ghostAge(G), pT = GHOST_T[G.id] || (GHOST_T[G.id] = { id: -G.id, col: '#7a7468', kn: {}, fire: { lit: false }, town: G.town, townVer: -1, members: [], huts: [] });
+  // Reste der Palisade
+  if (G.pal && age < 25) { const WL = townWall(pT); if (WL) { const n = Math.round(WL.tiles.length * Math.min(1, G.pal / 24)); for (let k = 0; k < n; k++) { if (hash(WL.tiles[k][0] + 1, WL.tiles[k][1]) < age / 25) continue; const X = WL.tiles[k][0] * TS, Y = WL.tiles[k][1] * TS; ctx.fillStyle = '#5a4430'; ctx.fillRect(X + 3, Y - 2, 3, 12); ctx.fillRect(X + 10, Y + 1, 3, 9); } } }
+  for (const h of G.huts) {
+    if (h.lx === undefined) continue;
+    const d = decayOf(h, G), X = h.lx * TS, Y = h.ly * TS, Wd = h.w * TS, Hd = h.h * TS;
+    if (d < 2) {
+      drawHouse(h, pT);
+      ctx.fillStyle = `rgba(30,30,25,${d === 0 ? 0.25 : 0.38})`; ctx.fillRect(X - 2, Y - 3, Wd + 4, Hd + 4);
+      if (d === 1) { // Löcher im Dach, eingesunkene Wand, Unkraut
+        for (let i = 0; i < 3; i++) { const a = hash(h.lx + i, h.ly), b = hash(h.ly + i, h.lx); ctx.fillStyle = 'rgba(40,30,20,.85)'; ctx.fillRect(X + 4 + a * (Wd - 14), Y + 4 + b * (Hd - 14), 8, 6); }
+        ctx.fillStyle = '#4f8a3a'; for (let i = 0; i < 6; i++) ctx.fillRect(X + hash(i, h.lx) * Wd, Y + Hd - 3 + hash(h.ly, i) * 4, 2, 3);
+      }
+    } else { // Ruine: Boden und Mauerstümpfe, überwachsen
+      ctx.fillStyle = 'rgba(90,75,55,.55)'; ctx.fillRect(X, Y, Wd, Hd);
+      const stub = h.stone || h.mud ? (h.mud ? '#a8844f' : '#77737a') : '#4a3424';
+      ctx.fillStyle = stub; for (let i = 0; i < 9; i++) { const a = hash(h.lx * 3 + i, h.ly), b = hash(h.ly * 5 + i, h.lx); if (a < 0.45) continue; const onX = i % 2; ctx.fillRect(onX ? X + b * (Wd - 6) : (b < 0.5 ? X : X + Wd - 3), onX ? (a < 0.7 ? Y : Y + Hd - 3) : Y + a * (Hd - 6), onX ? 6 : 3, onX ? 3 : 6); }
+      ctx.fillStyle = '#5d8a3a'; for (let i = 0; i < 10; i++) ctx.fillRect(X + hash(i, h.lx + 2) * Wd, Y + hash(h.ly + 2, i) * Hd, 3, 2);
+      if (age > 60) { ctx.fillStyle = '#3f6e2e'; ctx.beginPath(); ctx.arc(X + Wd * 0.6, Y + Hd * 0.4, 6, 0, 7); ctx.fill(); } // ein Busch wächst in der Ruine
+    }
+  }
+  // ein verlassenes Haupthaus
+  if (G.bld && G.bld.hall >= BUILD_NEED.hall) { const P = Object.values(G.town.lots).find(L => L.kind === 'hall'); if (P) { const X = P.x0 * TS, Y = P.y0 * TS; ctx.fillStyle = age < 20 ? 'rgba(60,45,30,.6)' : 'rgba(90,75,55,.5)'; ctx.fillRect(X, Y, P.w * TS, P.h * TS); ctx.fillStyle = '#4a3424'; for (let i = 0; i < 10; i++) if (hash(i, P.x0) < 0.75 - age / 120) ctx.fillRect(X + i * P.w * TS / 10, Y + (i % 2) * (P.h * TS - 4), 5, 4); } }
 }
 
 </script>

@@ -70,6 +70,7 @@ function splitWorld(groups) {
     S.fires = FULL.fires.filter(f => owner(f.x, f.y) === s);
     S.graves = FULL.graves.filter(f => owner(f.x, f.y) === s);
     S.corpses = (FULL.corpses || []).filter(f => owner(f.x, f.y) === s);
+    S.ghosts = (FULL.ghosts || []).filter(f => owner(f.cx, f.cy) === s);
     S.paintAll = (FULL.paintAll || []).filter(f => owner(f.x, f.y) === s);
     S.chron = []; S.dead = []; S.stats = [];
     S.nextId = FULL.nextId + s * 50000000;
@@ -81,10 +82,10 @@ function splitWorld(groups) {
 function mergeDumps(strs) {
   const D = strs.map(s => JSON.parse(s)), M = Object.assign({}, D[0]);
   const cat = k => D.flatMap(d => d[k] || []);
-  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'paintAll']) M[k] = cat(k);
+  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'ghosts', 'paintAll']) M[k] = cat(k);
   M.bushes = cat('bushes').sort((a, b) => a.id - b.id);
   M.dead = SH.master.dead.concat(cat('dead'));
-  for (const k of ['fields', 'res', 'cut', 'path', 'foot', 'beliefs', 'cults']) { M[k] = {}; for (const d of D) Object.assign(M[k], d[k] || {}); }
+  for (const k of ['fields', 'res', 'cut', 'path', 'foot', 'beliefs', 'cults', 'road']) { M[k] = {}; for (const d of D) Object.assign(M[k], d[k] || {}); }
   M.discovered = {}; for (const d of D) for (const k in d.discovered) if (!M.discovered[k] || d.discovered[k].t < M.discovered[k].t) M.discovered[k] = d.discovered[k];
   M.nextId = Math.max(...D.map(d => d.nextId)); M.tick = Math.max(...D.map(d => d.tick));
   M.chron = SH.master.chron; M.stats = SH.master.stats;
@@ -138,8 +139,8 @@ function onShard(s, m) {
 }
 function postMergedState(R, ownDirty) {
   const L = R.map(r => r.lite), M = Object.assign({}, SH.master.meta, L[0]);
-  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'paintAll', 'dead']) M[k] = L.flatMap(l => l[k] || []);
-  for (const k of ['fields', 'res', 'cut', 'path', 'beliefs', 'cults']) { M[k] = {}; for (const l of L) Object.assign(M[k], l[k] || {}); }
+  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'corpses', 'ghosts', 'paintAll', 'dead']) M[k] = L.flatMap(l => l[k] || []);
+  for (const k of ['fields', 'res', 'cut', 'path', 'beliefs', 'cults', 'road']) { M[k] = {}; for (const l of L) Object.assign(M[k], l[k] || {}); }
   M.discovered = {}; for (const l of L) for (const k in l.discovered) if (!M.discovered[k] || l.discovered[k].t < M.discovered[k].t) M.discovered[k] = l.discovered[k];
   // Jahresstatistik: Regionen zusammenzählen
   const ys = new Map(SH.master.stats.map(s => [s.y, s]));

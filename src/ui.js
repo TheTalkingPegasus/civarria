@@ -19,6 +19,7 @@ const ACT_TXT = { fetch: 'holt etwas aus dem Lager',
   explore: 'erkundet die Gegend', watch: 'beobachtet einen Fremden im Revier', diplo: 'reist als Gesandter', experiment: 'tüftelt herum', craft: 'stellt etwas her', build: 'baut eine Hütte', ritual: 'vollzieht ein Ritual',
   preach: 'predigt seinen Glauben', paint: 'malt an eine Felswand', heal: 'sucht Heilkräuter', lightfire: 'versucht, Feuer zu entfachen',
   fetchfire: 'holt Glut für das Lager', raid: 'zieht in den Kampf', return: 'kehrt heim', idle: 'schaut sich um',
+  council: 'berät sich mit den Angesehenen im Haupthaus', road: 'legt eine Straße an',
   hide: 'versteckt sich vor den Angreifern', down: 'liegt verwundet am Boden', bury: 'kümmert sich um einen Toten',
 };
 const CTX_TXT = { craft: 'Herstellen von Dingen', fishing: 'Fischen', store: 'Vorräte anlegen', winter: 'Überwintern', paint: 'Malen', trade: 'Besuch bei anderen Sippen', talk: 'Gespräch', farm: 'Feldarbeit', sheepnear: 'Mufflons in der Nähe', cattlenear: 'Auerochsen in der Nähe', pignear: 'Wildschweine in der Nähe', donkeynear: 'Wildesel in der Nähe', herd: 'Vieh hüten', woodcut: 'Holz schlagen', cook: 'Kochen und Essen', spin: 'Fäden drehen', potter: 'Töpfern', irrigate: 'Feldarbeit am Fluss', carry: 'Lasten schleppen', count: 'Vorräte zählen', sky: 'Sterne beobachten', temple: 'Rituale in der Siedlung', crowd: 'Leben in großer Gemeinschaft', theft: 'Streit um Besitz', war: 'Kampf', stone: 'Steine sammeln', hunt: 'Jagen', knap: 'Feuerstein bearbeiten', firework: 'Holz ins Feuer legen', eatfire: 'Essen am Feuer', coldhide: 'Frieren mit Fellen', gather: 'Sammeln', water: 'Arbeiten am Wasser', coldcamp: 'Frieren im Lager', wood: 'Holz schlagen', sickgather: 'Sammeln, wenn jemand krank ist', gathercamp: 'Sammeln nahe dem Lager', grief: 'Trauer um einen Toten', ritual: 'Rituale', rest: 'Gespräche am Feuer', clayfire: 'Lehm nahe am Feuer', wolfnear: 'Jagen nahe bei Wölfen', waterblock: 'Festsitzen am Fluss', build: 'Bauen', raided: 'Überfallen werden', goatnear: 'Jagen nahe bei Wildziegen' };
@@ -306,6 +307,8 @@ function draw(t) {
     sprC(ctx, 'bush', px, py, 1.1); if (season === 3) { ctx.fillStyle = 'rgba(220,225,230,.45)'; ctx.fillRect(px - 8, py - 4, 16, 9); }
     if (b.f > 0 && season !== 3) { ctx.fillStyle = '#c23b4a'; const k = Math.min(5, Math.ceil(b.f / 3)); for (let i = 0; i < k; i++) { ctx.beginPath(); ctx.arc(px + Math.cos(i * 2.4) * 2.6, py + Math.sin(i * 2.4) * 2.6, 1.2, 0, 7); ctx.fill(); } }
   }
+  if (Z > 0.3) drawRoads(x0, y0, x1, y1);
+  if (Z > 0.3) for (const G of (W.ghosts || [])) if (inView(G.cx, G.cy, 30)) drawGhost(G);
   // Gräber
   for (const g of W.graves) { if (!inView(g.x, g.y)) continue; drawGrave(g); }
   if (Z > 0.45) for (const c of (W.corpses || [])) { if (c.carry || !inView(c.x, c.y)) continue; drawCorpse(c, c.x * TS, c.y * TS); }
@@ -345,6 +348,8 @@ function draw(t) {
     if (T.town) for (const k in T.town.lots) { const P = T.town.lots[k]; if (P.kind === 'bau' && k === P.i + ',' + P.j && P.prog) drawSite(P, T); }
     for (const h of T.huts) h.lx !== undefined ? drawHouse(h, T) : h.mud ? drawMudHouse(h.x * TS, h.y * TS, h.rot, T.col) : drawHut(h.x * TS, h.y * TS, h.rot, T.col, h.stone);
     drawBuildings(T, px, py);
+    if (T.town && (T.bld?.hall || 0) > 0) drawHall(T);
+    if (T.town) drawDecor(T, px, py);
     // Feuer
     ctx.fillStyle = '#3a3633'; ctx.beginPath(); ctx.arc(px, py, 7, 0, 7); ctx.fill();
     for (let i = 0; i < 8; i++) { ctx.fillStyle = '#6f6a63'; ctx.beginPath(); ctx.arc(px + Math.cos(i * 0.785) * 7, py + Math.sin(i * 0.785) * 7, 1.8, 0, 7); ctx.fill(); }
@@ -369,18 +374,19 @@ function draw(t) {
   ctx.restore();
 
   // Nacht & Licht
-  const h = hourNow();
-  let dark = 0;
-  if (h >= 20 || h < 6) dark = h >= 20 ? Math.min(1, (h - 20) / 1.5) : h < 5 ? 1 : 1 - (h - 5);
-  if (ui.speed >= 5) dark = 0; // kein Tag/Nacht-Flackern bei hohem Tempo
-  if (dark > 0) {
+  const { dark, dusk } = dayLight();
+  if (dusk > 0.01) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = `rgba(255,120,50,${0.13 * dusk})`; ctx.fillRect(0, 0, VW * DPR, VH * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); }
+  if (dark > 0.01) {
     nctx.setTransform(1, 0, 0, 1, 0, 0); nctx.globalCompositeOperation = 'source-over'; nctx.clearRect(0, 0, nightC.width, nightC.height);
-    nctx.fillStyle = `rgba(8,14,35,${0.62 * dark})`; nctx.fillRect(0, 0, nightC.width, nightC.height);
+    nctx.fillStyle = `rgba(${8 + Math.round(30 * dusk)},${14 + Math.round(6 * dusk)},${35 + Math.round(20 * dusk)},${0.74 * dark})`; nctx.fillRect(0, 0, nightC.width, nightC.height);
     nctx.globalCompositeOperation = 'destination-out';
     const lights = [];
     for (const T of W.tribes) if (T.alive && T.fire.lit) lights.push([T.cx, T.cy, 110]);
     for (const f of W.fires) lights.push([f.x, f.y, 90]);
-    for (const n of W.npcs) if (n.carryFire) lights.push([n.x, n.y, 40]);
+    for (const n of W.npcs) if (n.carryFire) lights.push([n.x, n.y, 40]); else if (n._torch) { const [x, y] = lerpPos(n); lights.push([x, y, 34]); }
+    for (const T of W.tribes) if (T.alive && T.town && TK(T, 'fackeln')) for (const p of townTorches(T)) lights.push([p[0], p[1] - 0.6, 30]);
+    for (const T of W.tribes) if (T.alive && hallDone(T)) { const H = hallOf(T); if (H) lights.push([H.x, H.y, 36]); }
+    for (const T of W.tribes) if (T.alive) for (const h of T.huts) if (h.lx !== undefined && (h.lx + h.ly) % 3 === 0) lights.push([h.x, h.y, 13]);
     for (const [lx, ly, r0] of lights) {
       const [sx, sy] = w2s(lx, ly); const r = r0 * cam.z * DPR * (0.95 + Math.sin(FT * 9 + lx) * 0.04);
       const gr = nctx.createRadialGradient(sx * DPR, sy * DPR, 0, sx * DPR, sy * DPR, r);
@@ -514,7 +520,8 @@ function drawTownGround(T) {
     if (P.kind === 'werk' && k === P.i + ',' + P.j) { if (TK(T, 'toepferscheibe')) { const c = pxCanvas('pwheel', PWHEEL_PX, FURN_PAL); ctx.drawImage(c, P.x0 * TS + 26, P.y0 * TS + 10); } if (TK(T, 'lehmziegel')) for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) { ctx.fillStyle = '#b8925c'; ctx.fillRect(P.x0 * TS + 6 + i * 9, P.y0 * TS + 40 + r * 7, 7, 4); ctx.fillStyle = '#d4b07a'; ctx.fillRect(P.x0 * TS + 6 + i * 9, P.y0 * TS + 40 + r * 7, 7, 1); } }
     if (P.kind === 'werk' && k === P.i + ',' + P.j && TK(T, 'rad')) { const wc = pxCanvas('wheel', WHEEL_PX, FURN_PAL); ctx.drawImage(wc, P.x0 * TS + 26, (P.y0 + P.h) * TS - 14); ctx.drawImage(wc, P.x0 * TS + 30, (P.y0 + P.h) * TS - 12); }
     if (P.kind === 'store' && k === P.i + ',' + P.j && TK(T, 'wagen')) { const c = pxCanvas('cart', CART_PX, { o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', r: '#8a6a44', R: '#4a3424' }); ctx.drawImage(c, (P.x0 + P.w) * TS + 1, (P.y0 + 2) * TS); }
-    if (P.kind === 'cem' && k === P.i + ',' + P.j) drawCemLot(P, T); }
+    if (P.kind === 'cem' && k === P.i + ',' + P.j) drawCemLot(P, T);
+    if (P.kind === 'garden' && k === P.i + ',' + P.j) drawGarden(P, T); }
 }
 const roofView = () => cam.z < 1.15;
 function houseStyle(h) { return h.stone ? 'stone' : h.mud ? 'mud' : 'hut'; }
@@ -729,6 +736,8 @@ function drawNpc(n, px, py, selected, detail) {
   if (carry > 0 && detail) { const bx = n.face === 'up' ? 0 : -dir * 4, by = n.face === 'up' ? -6 : -4; ctx.fillStyle = n.tools.korb > 0 ? '#b8935a' : '#7a5a34'; ctx.fillRect(bx - 2.5, by, 5, 4); if (n.inv.meat) { ctx.fillStyle = '#a3311f'; ctx.fillRect(bx - 1.5, by, 3, 2); } else { ctx.fillStyle = '#c23b4a'; ctx.fillRect(bx - 1.5, by, 1, 1); ctx.fillRect(bx + 0.5, by + 1, 1, 1); } }
   if (n.inv.wood > 0 && detail) { ctx.fillStyle = '#6b4a2b'; ctx.fillRect(-5, -5, 10, 1.5); ctx.fillRect(-4, -3.5, 8, 1.5); }
   if (n.carryFire) drawFlame(dir * 6, -8, 0.35);
+  n._torch = detail !== null && typeof torchOf === 'function' && torchOf(n);
+  if (n._torch && !n.carryFire) { const tx = n.face === 'side' ? (n.flip ? -5 : 5) : -5; ctx.fillStyle = '#5a3d22'; ctx.fillRect(tx - 0.5, -11, 1.5, 9); ctx.fillStyle = '#3a2a1a'; ctx.fillRect(tx - 1, -12, 2.5, 2); drawFlame(tx + 0.3, -13, 0.28); }
   if (a && a.loot > 0 && detail) { ctx.fillStyle = '#8a6a44'; ctx.beginPath(); ctx.ellipse(-dir * 4, -6, 4, 3.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#6a4a2a'; ctx.fillRect(-dir * 4 - 1, -10, 2, 2); }
   if (a && a.type === 'bury' && a.stage === 1 && detail) { const c = (W.corpses || []).find(c => c.id === a.corpse); if (c) { ctx.save(); ctx.translate(0, -12); ctx.scale(0.85, 0.85); drawCorpse(c, 0, 0, true); ctx.restore(); } }
   // Status-Symbol
@@ -1066,7 +1075,7 @@ function hover(e) {
   const tip = $('tip'); const { n, wx, wy } = pickAt(e.clientX, e.clientY);
   let txt = '';
   if (n) txt = `<b>${esc(n.name)}</b> · ${esc(actText(n))}`;
-  else { const a = W.animals.find(a => dist(a.x, a.y, wx, wy) < 0.7); if (a) txt = a.k === 'goat' ? (a.tribe ? 'Ziege der ' + (TRIBE.get(a.tribe)?.name || '?') : 'Wildziege') : a.k === 'deer' ? 'Hirsch' : a.k === 'horse' ? 'Wildpferd' : a.owner ? 'Hund von ' + (NPC.get(a.owner)?.name || '?') : 'Wolf'; else { const b = bushesNear(wx, wy, 0.6)[0]; if (b) txt = b.f > 0 ? `Beerenstrauch (${b.f})` : 'Abgeerntetes Gebüsch'; else { const p = (W.paintAll || []).find(p => dist(p.x, p.y, wx, wy) < 0.8); if (p) txt = `Felsbild von ${esc(p.by)}${p.k ? ' – zeigt ' + TECH[p.k].name : ''}`; else { const g = W.graves.find(g => dist(g.x, g.y, wx, wy) < 0.6); if (g) txt = `Grab von ${esc(g.name)}`; else { const fi = (wy | 0) * C.MW + (wx | 0), f = W.fields[fi]; if (f) txt = `Feld der ${esc(TRIBE.get(f.tr)?.name || '?')} – ${['brach', 'frisch gesät', 'wächst', 'reif zur Ernte'][f.st]}`; else if (W.path[fi]) txt = ['', 'Trampelpfad', 'ausgetretener Pfad', 'viel begangener Weg'][W.path[fi]]; } } } } }
+  else { const a = W.animals.find(a => dist(a.x, a.y, wx, wy) < 0.7); if (a) txt = a.k === 'goat' ? (a.tribe ? 'Ziege der ' + (TRIBE.get(a.tribe)?.name || '?') : 'Wildziege') : a.k === 'deer' ? 'Hirsch' : a.k === 'horse' ? 'Wildpferd' : a.owner ? 'Hund von ' + (NPC.get(a.owner)?.name || '?') : 'Wolf'; else { const b = bushesNear(wx, wy, 0.6)[0]; if (b) txt = b.f > 0 ? `Beerenstrauch (${b.f})` : 'Abgeerntetes Gebüsch'; else { const p = (W.paintAll || []).find(p => dist(p.x, p.y, wx, wy) < 0.8); if (p) txt = `Felsbild von ${esc(p.by)}${p.k ? ' – zeigt ' + TECH[p.k].name : ''}`; else { const g = W.graves.find(g => dist(g.x, g.y, wx, wy) < 0.6); const G = !g && (W.ghosts || []).find(G => G.huts.some(h => wx >= h.lx && wx < h.lx + h.w && wy >= h.ly && wy < h.ly + h.h)); if (G) { const y = Math.round(ghostAge(G)); txt = `${G.huts.some(h => decayOf(h, G) >= 2) ? 'Ruinen' : 'Verlassene Häuser'} der ${esc(G.name)} – ${G.why === 'fort' ? 'fortgezogen' : 'ausgestorben'} vor ${y < 1 ? 'weniger als einem Jahr' : y === 1 ? 'einem Jahr' : y + ' Jahren'}`; } else if (g) txt = `Grab von ${esc(g.name)}${g.full && g.full !== g.name ? ' (' + esc(g.full) + ')' : ''}`; else { const fi = (wy | 0) * C.MW + (wx | 0), f = W.fields[fi]; if (f) txt = `Feld der ${esc(TRIBE.get(f.tr)?.name || '?')} – ${['brach', 'frisch gesät', 'wächst', 'reif zur Ernte'][f.st]}`; else if (W.path[fi]) txt = ['', 'Trampelpfad', 'ausgetretener Pfad', 'viel begangener Weg'][W.path[fi]]; } } } } }
   if (txt) { tip.innerHTML = txt; tip.style.display = 'block'; tip.style.left = e.clientX + 14 + 'px'; tip.style.top = e.clientY + 12 + 'px'; } else tip.style.display = 'none';
 }
 cv.addEventListener('pointerleave', () => $('tip').style.display = 'none');
@@ -1370,4 +1379,138 @@ function drawSite(P, T) {
   // Baumaterial liegt bereit
   for (let i = 0; i < Math.max(0, 3 - Math.floor(pr / 4)); i++) tex(ctx, 'logEnd', X + Wd + 1, Y + 6 + i * 7, 6, 6);
   if (st === 'stone' && pr < 7) for (let i = 0; i < 3; i++) { ctx.fillStyle = '#7e7a74'; ctx.fillRect(X - 7, Y + 8 + i * 6, 5, 4); ctx.fillStyle = '#a8a39b'; ctx.fillRect(X - 7, Y + 8 + i * 6, 4, 1); }
+}
+
+// =====================================================================
+//  Tag und Nacht fließend · Straßen · Haupthaus · Dorfschmuck · Ruinen
+// =====================================================================
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+function dayLight() {
+  if (!W) return { dark: 0, dusk: 0 };
+  const hf = (((W.tick + (ALPHA || 0)) % C.TPD) + C.TPD) % C.TPD * 24 / C.TPD;
+  let dark = hf >= 12 ? smooth(18.3, 22, hf) : 1 - smooth(4.3, 7.6, hf);
+  let dusk = Math.max(0, 1 - Math.abs(hf - 19.2) / 2.2) + Math.max(0, 1 - Math.abs(hf - 5.8) / 1.8) * 0.7;
+  if (ui.speed >= 5) { dark = 0.12; dusk = 0; } // bei hohem Tempo kein Flackern: gleichmäßiges Dämmerlicht
+  return { dark, dusk: clamp(dusk, 0, 1) };
+}
+// ---------------------------------------------------------------- Straßen
+function drawRoads(x0, y0, x1, y1) {
+  const R = W.road; if (!R) return;
+  for (const k in R) {
+    const i = +k, x = i % C.MW, y = (i / C.MW) | 0; if (x < x0 - 1 || x > x1 + 1 || y < y0 - 1 || y > y1 + 1) continue;
+    const lv = R[k], X = x * TS, Y = y * TS, h = hash(x + 3, y + 9);
+    if (lv === 1) { // aufgeschüttete, festgestampfte Erde
+      ctx.fillStyle = '#a5875a'; ctx.fillRect(X, Y, TS, TS); ctx.fillStyle = '#8f7149'; ctx.fillRect(X + (h * 9 | 0), Y + 3, 3, 1); ctx.fillRect(X + 4, Y + 10 + (h * 4 | 0), 2, 1); ctx.fillRect(X + 11, Y + (h * 12 | 0), 1, 2);
+      ctx.fillStyle = '#b89a6a'; ctx.fillRect(X + 2 + (h * 10 | 0), Y + 7, 2, 1);
+      const e = (dx, dy) => !R[(y + dy) * C.MW + x + dx]; ctx.fillStyle = 'rgba(90,70,40,.35)'; if (e(0, -1)) ctx.fillRect(X, Y, TS, 1); if (e(0, 1)) ctx.fillRect(X, Y + TS - 1, TS, 1); if (e(-1, 0)) ctx.fillRect(X, Y, 1, TS); if (e(1, 0)) ctx.fillRect(X + TS - 1, Y, 1, TS);
+    } else if (lv === 2) { // Kies
+      ctx.fillStyle = '#9c9488'; ctx.fillRect(X, Y, TS, TS); for (let j = 0; j < 7; j++) { const a = hash(x * 7 + j, y * 3 + j); ctx.fillStyle = j % 2 ? '#b8b0a2' : '#7e776c'; ctx.fillRect(X + (a * 15 | 0), Y + (hash(j + x, y - j) * 15 | 0), 1, 1); }
+    } else { // Pflaster
+      ctx.fillStyle = '#6e6a64'; ctx.fillRect(X, Y, TS, TS); ctx.fillStyle = '#9a958d'; for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) ctx.fillRect(X + c * 8 + (r % 2) * 4 - (r % 2 && c ? 8 : 0) + 1, Y + r * 4 + 1, 6, 3);
+    }
+  }
+}
+// ---------------------------------------------------------------- Haupthaus: ein Langhaus über zwei Parzellen
+function drawHall(T) {
+  const H = hallOf(T); if (!H) return;
+  const X = H.lx * TS, Y = H.ly * TS, Wd = H.w * TS, Hd = H.h * TS, pr = Math.min(1, (T.bld.hall || 0) / BUILD_NEED.hall), door = X + 2 * TS;
+  const st = TK(T, 'lehmziegel') ? 'mud' : TK(T, 'steinbau') ? 'stone' : 'hut';
+  ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(X + 3, Y + 4, Wd, Hd);
+  if (pr < 1) { // Baustelle: Pfosten, Boden, Wände wachsen
+    ctx.fillStyle = '#5a3d22'; for (let i = 0; i <= 8; i++) if (i / 8 <= pr * 2) { ctx.fillRect(X + i * (Wd - 3) / 8, Y - 4, 3, 7); ctx.fillRect(X + i * (Wd - 3) / 8, Y + Hd - 4, 3, 7); }
+    if (pr > 0.3) { ctx.fillStyle = st === 'stone' ? patt(ctx, 'stoneFloor') : patt(ctx, 'dirtFloor'); ctx.fillRect(X, Y, Wd * Math.min(1, (pr - 0.3) / 0.3), Hd); }
+    if (pr > 0.6) { ctx.fillStyle = patt(ctx, st === 'stone' ? 'cobble' : 'bark'); ctx.fillRect(X, Y, Wd * Math.min(1, (pr - 0.6) / 0.4), 9); }
+    for (let i = 0; i < 4; i++) tex(ctx, 'logEnd', X + Wd + 2, Y + 4 + i * 7, 6, 6);
+    return;
+  }
+  if (roofView()) {
+    ctx.fillStyle = st === 'hut' ? patt(ctx, 'hay') : st === 'mud' ? '#d4b07a' : patt(ctx, 'cobble'); ctx.fillRect(X - 3, Y - 3, Wd + 6, Hd + 4);
+    ctx.fillStyle = 'rgba(90,60,20,.35)'; for (let i = 3; i < Hd; i += 6) ctx.fillRect(X - 3, Y + i, Wd + 6, 1);
+    ctx.fillStyle = st === 'hut' ? '#7a5a2a' : '#8a7a5a'; ctx.fillRect(X - 3, Y + Hd / 2 - 2, Wd + 6, 4); ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(X - 3, Y + Hd - 4, Wd + 6, 4);
+    for (const gx of [X + 2, X + Wd - 6]) { ctx.fillStyle = '#4a3020'; ctx.fillRect(gx, Y - 8, 4, 6); ctx.fillStyle = T.col; ctx.fillRect(gx + 1, Y - 7, 2, 3); } // geschnitzte Giebel
+    ctx.fillStyle = '#2a1e16'; ctx.fillRect(door + 3, Y + Hd - 9, 10, 9);
+    ctx.fillStyle = T.col; ctx.fillRect(X + Wd / 2 - 6, Y - 6, 12, 5);
+    return;
+  }
+  ctx.fillStyle = st === 'stone' ? patt(ctx, 'stoneFloor') : st === 'mud' ? '#b4906a' : patt(ctx, 'dirtFloor'); ctx.fillRect(X, Y, Wd, Hd);
+  // lange Feuerstelle in der Mitte, Bänke und Tafel, Ehrenplatz an der Stirnseite
+  const fy = Y + Hd * 0.5; ctx.fillStyle = '#5a5650'; ctx.fillRect(X + 34, fy - 4, Wd - 68, 8); ctx.fillStyle = '#2a201a'; ctx.fillRect(X + 36, fy - 2, Wd - 72, 4);
+  if (T.fire.lit) for (let i = 0; i < 3; i++) drawFlame(X + 44 + i * (Wd - 88) / 2, fy, 0.45);
+  ctx.fillStyle = '#8a6440'; ctx.fillRect(X + 18, Y + 12, Wd - 36, 4); ctx.fillRect(X + 18, Y + Hd - 18, Wd - 36, 4); // Bänke
+  ctx.fillStyle = '#6a4424'; for (let i = 0; i < 6; i++) { ctx.fillRect(X + 22 + i * (Wd - 48) / 5, Y + 16, 2, 2); ctx.fillRect(X + 22 + i * (Wd - 48) / 5, Y + Hd - 14, 2, 2); }
+  ctx.fillStyle = '#5a3d22'; ctx.fillRect(X + Wd - 16, fy - 7, 9, 14); ctx.fillStyle = T.col; ctx.fillRect(X + Wd - 15, fy - 6, 7, 5); ctx.fillStyle = '#e0b03c'; ctx.fillRect(X + Wd - 13, fy - 9, 3, 2); // Hochsitz
+  ctx.fillStyle = T.col; for (const bx of [X + 6, X + Wd - 26]) { ctx.fillRect(bx, Y + 2, 6, 10); ctx.fillStyle = '#efe6cc'; ctx.fillRect(bx + 2, Y + 5, 2, 2); ctx.fillStyle = T.col; } // Banner
+  const wallFace = (x, y, w, hh) => { if (st === 'mud') brick(x, y, w, hh, '#b8925c', '#9c7a4a'); else { ctx.fillStyle = patt(ctx, st === 'stone' ? 'cobble' : 'bark'); ctx.fillRect(x, y, w, hh); } };
+  wallFace(X, Y, Wd, 9);
+  const side = st === 'mud' ? '#a8844f' : st === 'stone' ? '#6a6a72' : '#4a3020', cap = st === 'mud' ? '#d4b07a' : st === 'stone' ? '#8a8a90' : '#6a4a2a';
+  ctx.fillStyle = side; ctx.fillRect(X, Y - 3, 3, Hd + 3); ctx.fillRect(X + Wd - 3, Y - 3, 3, Hd + 3);
+  ctx.fillRect(X, Y + Hd - 3, door - X, 4); ctx.fillRect(door + TS, Y + Hd - 3, X + Wd - door - TS, 4);
+  ctx.fillStyle = cap; ctx.fillRect(X, Y + Hd - 4, door - X, 1); ctx.fillRect(door + TS, Y + Hd - 4, X + Wd - door - TS, 1);
+  if (st === 'hut') { ctx.fillStyle = '#5a3d22'; for (let i = 2; i < Hd; i += 7) { ctx.fillRect(X - 1, Y + i, 5, 1); ctx.fillRect(X + Wd - 4, Y + i, 5, 1); } }
+}
+// ---------------------------------------------------------------- Gärten und Dorfschmuck
+function drawGarden(P, T) {
+  const X = P.x0 * TS, Y = P.y0 * TS, Wd = P.w * TS, Hd = P.h * TS;
+  const veg = TK(T, 'ackerbau') || TK(T, 'huelsen');
+  for (let r = 0; r < 5; r++) { ctx.fillStyle = '#6b4a2b'; ctx.fillRect(X + 6, Y + 8 + r * 11, Wd - 12, 5); for (let c = 0; c < 7; c++) { const h = hash(P.x0 + c, P.y0 + r); ctx.fillStyle = veg ? (h < 0.5 ? '#4f8a3a' : '#6fae45') : (h < 0.33 ? '#e8c840' : h < 0.66 ? '#c84a6a' : '#efe6cc'); ctx.fillRect(X + 9 + c * 7, Y + 8 + r * 11, veg ? 3 : 2, veg ? 3 : 2); } }
+  ctx.strokeStyle = '#7a5532'; ctx.lineWidth = 1; ctx.strokeRect(X + 3.5, Y + 3.5, Wd - 7, Hd - 7); // Flechtzaun
+  ctx.fillStyle = '#5a3d22'; for (let x = 3; x < Wd - 3; x += 6) { ctx.fillRect(X + x, Y + 2, 1, 4); ctx.fillRect(X + x, Y + Hd - 6, 1, 4); }
+}
+// Fackeln an den Toren und am Platz
+function townTorches(T) {
+  const out = [], O = T.town; if (!O) return out;
+  out.push([O.cx - 2.6, O.cy - 2.4], [O.cx + 2.4, O.cy - 2.4], [O.cx - 2.6, O.cy + 2.2], [O.cx + 2.4, O.cy + 2.2]);
+  if ((T.pal || 0) >= 12 || (T.bld?.wall || 0) > 0) for (const g of townWall(T).gates) { const [nx, ny] = GATE_N[g[2]]; if (nx) { out.push([g[0], g[1] - 1.6]); out.push([g[0], g[1] + 1.6]); } else { out.push([g[0] - 1.6, g[1]]); out.push([g[0] + 1.6, g[1]]); } }
+  return out;
+}
+function drawDecor(T, px, py) {
+  const O = T.town, pop = T.members.length, night = dayLight().dark > 0.3;
+  // Sitzbalken rund ums Feuer
+  if (T.huts.length) for (let i = 0; i < 3; i++) { const a = i / 3 * 6.283 + 0.4, x = px + Math.cos(a) * 20, y = py + Math.sin(a) * 14; ctx.save(); ctx.translate(x, y); ctx.rotate(a + 1.57); ctx.fillStyle = '#6b4a2b'; ctx.fillRect(-7, -2, 14, 4); ctx.fillStyle = '#8a6440'; ctx.fillRect(-7, -2, 14, 1); ctx.restore(); }
+  // Pfahl mit Schnitzereien in Sippenfarben, wo man an Geister glaubt oder Bilder malt
+  if (TK(T, 'malerei') || Object.keys(T.beliefs || {}).length || pop >= 25) { const x = px + 26, y = py - 30; ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x - 2, y + 22, 8, 3); ctx.fillStyle = '#6b4a2b'; ctx.fillRect(x, y, 5, 24); ctx.fillStyle = T.col; ctx.fillRect(x, y + 3, 5, 3); ctx.fillRect(x, y + 12, 5, 2); ctx.fillStyle = '#efe6cc'; ctx.fillRect(x + 1, y + 7, 1, 1); ctx.fillRect(x + 3, y + 7, 1, 1); ctx.fillStyle = '#2a1e1a'; ctx.fillRect(x + 1, y + 9, 3, 1); ctx.fillStyle = '#8a6440'; ctx.fillRect(x - 3, y + 1, 11, 2); }
+  // Brunnen am Platz für größere Dörfer
+  if (pop >= 30 && (TK(T, 'steinbau') || TK(T, 'lehmziegel'))) { const x = px - 34, y = py - 26; ctx.fillStyle = '#6e6a64'; ctx.beginPath(); ctx.ellipse(x, y, 8, 6, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#2a4a6a'; ctx.beginPath(); ctx.ellipse(x, y, 5, 3.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#5a3d22'; ctx.fillRect(x - 8, y - 12, 2, 12); ctx.fillRect(x + 6, y - 12, 2, 12); ctx.fillRect(x - 8, y - 13, 16, 2); }
+  // vor den Häusern: Blumen, Holzscheite, Fellrahmen, Töpfe, Heu
+  for (const h of T.huts) {
+    if (h.lx === undefined) continue; const k = hash(h.lx + 5, h.ly + 11), dx = (h.lx + (k < 0.5 ? 0.4 : h.w - 0.9)) * TS, dy = (h.ly + h.h + 0.25) * TS;
+    if (k < 0.2) { ctx.fillStyle = '#4f8a3a'; ctx.fillRect(dx, dy, 8, 3); ctx.fillStyle = '#e8c840'; ctx.fillRect(dx + 1, dy, 1, 1); ctx.fillStyle = '#c84a6a'; ctx.fillRect(dx + 4, dy, 1, 1); ctx.fillRect(dx + 6, dy + 1, 1, 1); }
+    else if (k < 0.4) { for (let i = 0; i < 3; i++) tex(ctx, 'logEnd', dx + i * 4, dy - (i === 2 ? 3 : 0), 5, 5); }
+    else if (k < 0.55 && TK(T, 'fellkleidung')) { ctx.fillStyle = '#5a3d22'; ctx.fillRect(dx, dy - 8, 1, 10); ctx.fillRect(dx + 8, dy - 8, 1, 10); ctx.fillRect(dx, dy - 8, 9, 1); ctx.fillStyle = '#9b7a55'; ctx.fillRect(dx + 1, dy - 7, 7, 6); }
+    else if (k < 0.7 && TK(T, 'toepfern')) { ctx.fillStyle = '#a0583a'; ctx.beginPath(); ctx.arc(dx + 3, dy + 1, 2.5, 0, 7); ctx.fill(); ctx.fillStyle = '#c87a50'; ctx.fillRect(dx + 2, dy - 2, 2, 1); }
+    else if (k < 0.8 && TK(T, 'ackerbau')) { ctx.fillStyle = '#d8b860'; ctx.fillRect(dx, dy - 2, 7, 5); ctx.fillStyle = '#b8984a'; ctx.fillRect(dx, dy + 1, 7, 1); }
+  }
+  // Fahnen in Sippenfarbe am Platz
+  if (pop >= 20) for (const [fx, fy] of [[px - 40, py + 26], [px + 40, py + 26]]) { ctx.fillStyle = '#5a3d22'; ctx.fillRect(fx, fy - 20, 2, 22); const w = Math.sin(FT * 3 + fx) * 1.5; ctx.fillStyle = T.col; ctx.beginPath(); ctx.moveTo(fx + 2, fy - 20); ctx.lineTo(fx + 11, fy - 18 + w); ctx.lineTo(fx + 2, fy - 14); ctx.fill(); }
+  // Fackeln an Toren und am Platz
+  if (TK(T, 'fackeln')) for (const [x, y] of townTorches(T)) { const X = x * TS, Y = y * TS; ctx.fillStyle = '#4a3420'; ctx.fillRect(X - 1, Y - 12, 2, 13); ctx.fillStyle = '#2a1e1a'; ctx.fillRect(X - 2, Y - 13, 4, 2); if (night) drawFlame(X, Y - 14, 0.35); }
+  // Vogelscheuchen auf den Feldern
+  if (TK(T, 'ackerbau') && T.tc) { let c = 0; for (const k in W.fields) { const f = W.fields[k]; if (f.tr !== T.id || f.st < 1 || hash(k % 997, 3) > 0.04 || c++ > 4) continue; const x = (k % C.MW) * TS + 8, y = ((k / C.MW) | 0) * TS + 8; ctx.fillStyle = '#5a3d22'; ctx.fillRect(x, y - 12, 1, 14); ctx.fillRect(x - 5, y - 8, 11, 1); ctx.fillStyle = '#8a6440'; ctx.fillRect(x - 3, y - 8, 7, 5); ctx.fillStyle = '#d8b860'; ctx.fillRect(x - 1, y - 13, 3, 3); } }
+}
+// ---------------------------------------------------------------- Verlassene Häuser und Ruinen
+const GHOST_T = {};
+function drawGhost(G) {
+  const age = ghostAge(G), pT = GHOST_T[G.id] || (GHOST_T[G.id] = { id: -G.id, col: '#7a7468', kn: {}, fire: { lit: false }, town: G.town, townVer: -1, members: [], huts: [] });
+  // Reste der Palisade
+  if (G.pal && age < 25) { const WL = townWall(pT); if (WL) { const n = Math.round(WL.tiles.length * Math.min(1, G.pal / 24)); for (let k = 0; k < n; k++) { if (hash(WL.tiles[k][0] + 1, WL.tiles[k][1]) < age / 25) continue; const X = WL.tiles[k][0] * TS, Y = WL.tiles[k][1] * TS; ctx.fillStyle = '#5a4430'; ctx.fillRect(X + 3, Y - 2, 3, 12); ctx.fillRect(X + 10, Y + 1, 3, 9); } } }
+  for (const h of G.huts) {
+    if (h.lx === undefined) continue;
+    const d = decayOf(h, G), X = h.lx * TS, Y = h.ly * TS, Wd = h.w * TS, Hd = h.h * TS;
+    if (d < 2) {
+      drawHouse(h, pT);
+      ctx.fillStyle = `rgba(30,30,25,${d === 0 ? 0.25 : 0.38})`; ctx.fillRect(X - 2, Y - 3, Wd + 4, Hd + 4);
+      if (d === 1) { // Löcher im Dach, eingesunkene Wand, Unkraut
+        for (let i = 0; i < 3; i++) { const a = hash(h.lx + i, h.ly), b = hash(h.ly + i, h.lx); ctx.fillStyle = 'rgba(40,30,20,.85)'; ctx.fillRect(X + 4 + a * (Wd - 14), Y + 4 + b * (Hd - 14), 8, 6); }
+        ctx.fillStyle = '#4f8a3a'; for (let i = 0; i < 6; i++) ctx.fillRect(X + hash(i, h.lx) * Wd, Y + Hd - 3 + hash(h.ly, i) * 4, 2, 3);
+      }
+    } else { // Ruine: Boden und Mauerstümpfe, überwachsen
+      ctx.fillStyle = 'rgba(90,75,55,.55)'; ctx.fillRect(X, Y, Wd, Hd);
+      const stub = h.stone || h.mud ? (h.mud ? '#a8844f' : '#77737a') : '#4a3424';
+      ctx.fillStyle = stub; for (let i = 0; i < 9; i++) { const a = hash(h.lx * 3 + i, h.ly), b = hash(h.ly * 5 + i, h.lx); if (a < 0.45) continue; const onX = i % 2; ctx.fillRect(onX ? X + b * (Wd - 6) : (b < 0.5 ? X : X + Wd - 3), onX ? (a < 0.7 ? Y : Y + Hd - 3) : Y + a * (Hd - 6), onX ? 6 : 3, onX ? 3 : 6); }
+      ctx.fillStyle = '#5d8a3a'; for (let i = 0; i < 10; i++) ctx.fillRect(X + hash(i, h.lx + 2) * Wd, Y + hash(h.ly + 2, i) * Hd, 3, 2);
+      if (age > 60) { ctx.fillStyle = '#3f6e2e'; ctx.beginPath(); ctx.arc(X + Wd * 0.6, Y + Hd * 0.4, 6, 0, 7); ctx.fill(); } // ein Busch wächst in der Ruine
+    }
+  }
+  // ein verlassenes Haupthaus
+  if (G.bld && G.bld.hall >= BUILD_NEED.hall) { const P = Object.values(G.town.lots).find(L => L.kind === 'hall'); if (P) { const X = P.x0 * TS, Y = P.y0 * TS; ctx.fillStyle = age < 20 ? 'rgba(60,45,30,.6)' : 'rgba(90,75,55,.5)'; ctx.fillRect(X, Y, P.w * TS, P.h * TS); ctx.fillStyle = '#4a3424'; for (let i = 0; i < 10; i++) if (hash(i, P.x0) < 0.75 - age / 120) ctx.fillRect(X + i * P.w * TS / 10, Y + (i % 2) * (P.h * TS - 4), 5, 4); } }
 }

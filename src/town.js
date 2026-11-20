@@ -37,8 +37,10 @@ function allocLot(T, kind, wl = 1, hl = 1, minR = 1) {
   for (let r = minR; r <= 6; r++) {
     const cand = [];
     for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (Math.max(Math.abs(i), Math.abs(j)) === r || (wl > 1 || hl > 1)) cand.push([i, j]);
-    cand.sort((a, b) => (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])) || hash3(T.id, a[0], a[1]) - hash3(T.id, b[0], b[1]));
+    const key2 = c => Math.abs(c[0]) + Math.abs(c[1]) + hash3(T.id, c[0], c[1]) * 1.6;
+    cand.sort((a, b) => key2(a) - key2(b));
     for (const [i, j] of cand) {
+      if ((kind === 'bau' || kind === 'house') && wl === 1 && r >= 2 && !O.lots[i + ',' + j] && hash3(T.id + 5, i, j) < 0.13 && lotOK(T, O, i, j)) { claimLot(T, O, 'garden', i, j, 1, 1); continue; } // ein Garten bleibt frei
       let ok = true;
       for (let b = 0; b < hl && ok; b++) for (let a = 0; a < wl && ok; a++) { const key = (i + a) + ',' + (j + b); if (O.lots[key] || !lotOK(T, O, i + a, j + b)) ok = false; }
       if (ok) return claimLot(T, O, kind, i, j, wl, hl);
@@ -61,10 +63,12 @@ function freeLot(T, P) { const O = T.town; if (!O || !P) return; for (const k in
 const hash3 = (a, b, c) => { let h = (a * 73856093) ^ (b * 19349663) ^ (c * 83492791); h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 // Ein Haus auf einer Parzelle: Tür nach Süden (zur Gasse), Betten an den Wänden
 function houseFromLot(P, base) {
-  const h = Object.assign(base || {}, { lx: P.x0, ly: P.y0, w: P.w, h: P.h, x: P.cx, y: P.cy, lot: P.i + ',' + P.j, rot: 0 });
+  const d = lotHouse(P);
+  const h = Object.assign(base || {}, { lx: d.lx, ly: d.ly, w: d.w, h: d.h, x: d.lx + d.w / 2, y: d.ly + d.h / 2, lot: P.i + ',' + P.j, rot: 0 });
   return h;
 }
-const bedsOf = h => [[h.lx + 0.62, h.ly + 1.45], [h.lx + h.w - 0.62, h.ly + 1.45], [h.lx + 0.62, h.ly + 2.85], [h.lx + h.w - 0.62, h.ly + 2.85], [h.lx + 1.0, h.ly + 3.45], [h.lx + h.w - 0.62, h.ly + 3.55]];
+const bedsOf = h => h.h === 3 ? [[h.lx + 0.62, h.ly + 1.25], [h.lx + h.w - 0.62, h.ly + 1.25], [h.lx + 0.62, h.ly + 2.2], [h.lx + h.w - 0.62, h.ly + 2.2], [h.lx + 1.0, h.ly + 2.55], [h.lx + h.w - 0.62, h.ly + 2.6]]
+  : [[h.lx + 0.62, h.ly + 1.45], [h.lx + h.w - 0.62, h.ly + 1.45], [h.lx + 0.62, h.ly + 2.85], [h.lx + h.w - 0.62, h.ly + 2.85], [h.lx + 1.0, h.ly + 3.45], [h.lx + h.w - 0.62, h.ly + 3.55]];
 const doorOut = h => [h.lx + 2.5, h.ly + h.h + 0.45], doorIn = h => [h.lx + 2.5, h.ly + h.h - 0.55];
 // Wände: hinein und hinaus nur durch die Tür (Kachel lx+2 in der unteren Reihe)
 function houseOK(e, x, y) {
@@ -78,9 +82,10 @@ function houseOK(e, x, y) {
 // Wo liegt welches Haus? (für Tür-Wege und Wärme)
 let HMAP = null, HMAPV = -1, HLIST = [];
 function houseAt(x, y) {
-  if (HMAPV !== (W.hutVer || 0) || !HMAP || HMAP.length !== C.MW * C.MH) {
-    HMAPV = W.hutVer || 0; if (!HMAP || HMAP.length !== C.MW * C.MH) HMAP = new Int32Array(C.MW * C.MH); else HMAP.fill(0); HLIST = [null];
-    for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts)) if (h.lx !== undefined) { const id = HLIST.length; HLIST.push(h); for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) HMAP[yy * C.MW + xx] = id; }
+  const hv = (W.hutVer || 0) + W.tribes.reduce((a, T) => a + (T.alive && hallDone(T) ? T.id : 0), 0) * 1e6;
+  if (HMAPV !== hv || !HMAP || HMAP.length !== C.MW * C.MH) {
+    HMAPV = hv; if (!HMAP || HMAP.length !== C.MW * C.MH) HMAP = new Int32Array(C.MW * C.MH); else HMAP.fill(0); HLIST = [null];
+    for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts).concat(hallDone(T) ? [hallOf(T)].filter(Boolean) : [])) if (h.lx !== undefined) { const id = HLIST.length; HLIST.push(h); for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) HMAP[yy * C.MW + xx] = id; }
   }
   x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return undefined;
   const id = HMAP[y * C.MW + x]; return id ? HLIST[id] : undefined;
@@ -128,7 +133,7 @@ function aStar(e, tx, ty) {
     const c = pop(); if (c === goal) { const pts = []; let q = c; while (q >= 0 && q !== s) { pts.push([(q % w) + x0 + 0.5, ((q / w) | 0) + y0 + 0.5]); q = from[q]; } return pts.reverse(); }
     const x = (c % w) + x0, y = ((c / w) | 0) + y0, gc = g[c];
     for (let d = 0; d < 4; d++) { const X = x + (d === 0 ? 1 : d === 1 ? -1 : 0), Y = y + (d === 2 ? 1 : d === 3 ? -1 : 0); if (X < x0 || Y < y0 || X >= x0 + w || Y >= y0 + h) continue;
-      const j = (Y - y0) * w + (X - x0), ng = gc + (W.path[Y * C.MW + X] ? 0.7 : 1); if (ng >= G(j) || hn >= AS_MAX * 4 - 1 || !stepOK(e, x, y, X, Y)) continue; st[j] = gen; g[j] = ng; from[j] = c; push(j, ng + 1.2 * (Math.abs(X - gx) + Math.abs(Y - gy))); }
+      const j = (Y - y0) * w + (X - x0), ng = gc + (W.road && W.road[Y * C.MW + X] ? 0.5 : W.path[Y * C.MW + X] ? 0.7 : 1); if (ng >= G(j) || hn >= AS_MAX * 4 - 1 || !stepOK(e, x, y, X, Y)) continue; st[j] = gen; g[j] = ng; from[j] = c; push(j, ng + 1.2 * (Math.abs(X - gx) + Math.abs(Y - gy))); }
   }
   return null;
 }
@@ -229,8 +234,9 @@ function townInside(WL, x, y) { const R = WL.bb; x |= 0; y |= 0; if (x < R.x0 ||
 // Welche Siedlung belegt eine Kachel? (damit Siedlungen Abstand halten)
 let TOCC = null, TOCCV = '';
 function townOcc(x, y, self) {
-  const v = W.tribes.reduce((a, T) => a + (T.alive && T.town ? T.id * 7 + (T.townVer || 0) : 0), 0) + ':' + W.tribes.length;
+  const v = W.tribes.reduce((a, T) => a + (T.alive && T.town ? T.id * 7 + (T.townVer || 0) : 0), 0) + ':' + W.tribes.length + ':' + (W.ghostVer || 0);
   if (v !== TOCCV || !TOCC || TOCC.length !== C.MW * C.MH) { TOCCV = v; if (!TOCC || TOCC.length !== C.MW * C.MH) TOCC = new Int32Array(C.MW * C.MH); else TOCC.fill(0);
+    for (const G of (W.ghosts || [])) if (G.town) for (const k in G.town.lots) { const [i, j] = k.split(',').map(Number); const [lx, ly] = lotXY(G.town, i, j); for (let yy = ly - 1; yy <= ly + LOTW; yy++) for (let xx = lx - 1; xx <= lx + LOTW; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) TOCC[yy * C.MW + xx] = -1; }
     for (const T of W.tribes) if (T.alive && T.town) for (const k in T.town.lots) { const [i, j] = k.split(',').map(Number); const [lx, ly] = lotXY(T.town, i, j); for (let yy = ly - 1; yy <= ly + LOTW; yy++) for (let xx = lx - 1; xx <= lx + LOTW; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) TOCC[yy * C.MW + xx] = T.id; } }
   x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return 0; const o = TOCC[y * C.MW + x]; return o && o !== self ? o : 0;
 }

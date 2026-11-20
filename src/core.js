@@ -52,7 +52,7 @@ const TECH = {
   kochen:      { name: 'Kochen', icon: '🍖', req: [], D: 3900, ctx: { eatfire: 1, experiment: 0.5 }, desc: 'Fleisch über dem Feuer garen. Sättigt besser und macht seltener krank.' },
   fellkleidung:{ name: 'Fellkleidung', icon: '🧥', req: ['faustkeil'], D: 4500, ctx: { coldhide: 1.2, experiment: 0.5 }, desc: 'Felle zuschneiden und umhängen. Schützt vor Kälte.' },
   flechten:    { name: 'Korbflechten', icon: '🧺', req: [], D: 5100, ctx: { gather: 0.6, experiment: 0.8 }, desc: 'Fasern zu Körben flechten. Sammler tragen mehr nach Hause.' },
-  fischen:     { name: 'Fischen', icon: '🐟', req: ['speer'], D: 4500, ctx: { water: 1, experiment: 0.4 }, desc: 'Fische im seichten Wasser mit dem Speer fangen.' },
+  fischen:     { name: 'Fischen', icon: '🐟', req: ['speer'], D: 1500, ctx: { water: 1.5, waterblock: 0.6, hunt: 0.15, experiment: 0.4 }, desc: 'Fische im seichten Wasser mit dem Speer fangen.' },
   huette:      { name: 'Hüttenbau', icon: '🛖', req: ['faustkeil'], D: 6600, ctx: { coldcamp: 1, wood: 0.4, experiment: 0.6 }, desc: 'Aus Ästen und Fellen feste Hütten bauen. Warm und geschützt.' },
   heilkraeuter:{ name: 'Heilkräuter', icon: '🌿', req: [], D: 6000, ctx: { sickgather: 1.5, gather: 0.08, experiment: 0.4 }, desc: 'Bestimmte Pflanzen lindern Krankheit und Wunden.' },
   bestattung:  { name: 'Bestattung', icon: '⚱', req: [], D: 1800, ctx: { grief: 1 }, desc: 'Die Toten werden mit einem Ritual begraben. Ahnen werden verehrt.' },
@@ -62,7 +62,7 @@ const TECH = {
   bogen:       { name: 'Pfeil & Bogen', icon: '🏹', req: ['speer', 'flechten'], D: 9000, ctx: { hunt: 0.8, experiment: 0.5 }, desc: 'Eine gespannte Sehne schleudert Pfeile weit und genau. Jagd und Kampf verändern sich.' },
   palisade:    { name: 'Palisaden', icon: '🪵', req: ['faustkeil', 'huette'], D: 7500, ctx: { raided: 3, build: 0.4, experiment: 0.3 }, desc: 'Angespitzte Pfähle im Kreis um das Lager. Schutz vor Räubern, Feinden und Wölfen.' },
   viehzucht:   { name: 'Viehzucht', icon: '🐐', req: ['flechten', 'faustkeil'], D: 6500, ctx: { goatnear: 1.5, experiment: 0.3 }, desc: 'Wildziegen einfangen, einpferchen und vermehren. Milch und Fleisch ohne Jagd.' },
-  reusen:      { name: 'Fischreusen', icon: '🪤', req: ['fischen', 'flechten'], D: 5000, ctx: { water: 0.8, experiment: 0.4 }, desc: 'Geflochtene Fallen im seichten Wasser fangen Fische, während man schläft.' },
+  reusen:      { name: 'Fischreusen', icon: '🪤', req: ['fischen', 'flechten'], D: 3200, ctx: { water: 0.8, experiment: 0.4 }, desc: 'Geflochtene Fallen im seichten Wasser fangen Fische, während man schläft.' },
   weben:       { name: 'Weben', icon: '🧶', req: ['flechten', 'viehzucht'], D: 9000, ctx: { goatnear: 0.3, gather: 0.15, rest: 0.3, experiment: 0.6 }, desc: 'Ziegenhaar und Pflanzenfasern zu Fäden drehen und zu Stoff verweben. Leichte, warme Kleidung.' },
   floss:       { name: 'Floß', icon: '🛶', req: ['flechten', 'faustkeil'], D: 7000, ctx: { waterblock: 1, water: 0.3, experiment: 0.4 }, desc: 'Baumstämme zusammenbinden und über Flüsse und Seen setzen.' },
   steinbau:    { name: 'Steinbau', icon: '🧱', req: ['huette', 'faustkeil'], D: 9000, ctx: { stone: 0.6, build: 1.2, experiment: 0.4 }, desc: 'Fels aus Hügeln und Bergen brechen und daraus feste Steinhäuser bauen.' },
@@ -128,7 +128,7 @@ function newWorld(seed, opts = {}) {
   W = {
     v: 1, seed, rs: seed | 0, tick: 0, nextId: 1, progress: opts.progress || 1,
     t: [], flint: [], clay: [], bushes: [], ochre: [], animals: [], npcs: [], dead: [], tribes: [],
-    chron: [], stats: [], beliefs: {}, cults: {}, raids: [], fires: [], graves: [], res: {}, cut: {}, foot: {}, path: {}, pathVer: 0, fields: {},
+    chron: [], stats: [], beliefs: {}, cults: {}, raids: [], fires: [], graves: [], corpses: [], res: {}, cut: {}, foot: {}, path: {}, pathVer: 0, fields: {},
     discovered: {}, // techId -> {t, by, tribe}
     MW: C.MW, MH: C.MH, size: opts.size || 'klein',
   };
@@ -291,7 +291,7 @@ function buildIndex() {
 // ---------- Hilfen ----------
 const tileAt = (x, y) => { x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return T_DEEP; return W.t[y * C.MW + x]; };
 const passable = (x, y) => tileAt(x, y) !== T_DEEP;
-const passableFor = (e, x, y) => { const t = tileAt(x, y); if (t === T_DEEP) return false; if (t === T_SHALLOW && e.know && !e.know.floss && tileAt(e.x, e.y) !== T_SHALLOW) return false; if (e.know && W.hutVer && !(e.ghost > 0) && !stepOK(e, e.x, e.y, x, y)) return false; return true; };
+const passableFor = (e, x, y) => { const t = tileAt(x, y); if (t === T_DEEP) return false; if (t === T_SHALLOW && e.know && !e.know.floss && tileAt(e.x, e.y) !== T_SHALLOW) return false; if (e.know && W.hutVer) { if (e.ghost > 0) { if (wallAt(x, y) && !wallAt(e.x, e.y) && !((e.stk || 0) > 40)) return false; } else if (!stepOK(e, e.x, e.y, x, y)) return false; } return true; };
 const tribeOf = n => TRIBE.get(n.tribe);
 const knows = (n, k) => !!n.know[k];
 function epithet(n) {
@@ -348,7 +348,8 @@ const TILE_COST = [0, 22, 11, 10, 14, 16, 25];
 function flowFor(T) {
   let F = FLOW.get(T.id);
   const raft = !!T.raft;
-  if (F && F.cx === T.cx && F.cy === T.cy && F.raft === raft && (F.pv === W.pathVer || W.tick - F.t < C.TPY)) return F;
+  if (W.hutVer) wallAt(0, 0);
+  if (F && F.cx === T.cx && F.cy === T.cy && F.raft === raft && F.wv === WMAPV && (F.pv === W.pathVer || W.tick - F.t < C.TPY)) return F;
   // Nur ein Fenster um das Lager: große Welten bleiben bezahlbar
   const RW = FLOW_R, x0 = Math.max(0, (T.cx | 0) - RW), y0 = Math.max(0, (T.cy | 0) - RW), MW = Math.min(C.MW, (T.cx | 0) + RW + 1) - x0, MH = Math.min(C.MH, (T.cy | 0) + RW + 1) - y0, N = MW * MH, d = new Int32Array(N).fill(1e9);
   const G = (lx, ly) => (ly + y0) * C.MW + lx + x0;
@@ -366,12 +367,12 @@ function flowFor(T) {
       const j = ny * MW + nx, gj = G(nx, ny), t = W.t[gj];
       if (t === T_DEEP || (!raft && t === T_SHALLOW)) continue;
       if (dx && dy && (W.t[G(nx, y)] <= (raft ? T_DEEP : T_SHALLOW) || W.t[G(x, ny)] <= (raft ? T_DEEP : T_SHALLOW))) continue;
-      let c = TILE_COST[t]; const pl = W.path[gj]; if (W.hutVer) { const hh = houseAt(gj % C.MW, (gj / C.MW) | 0); if (hh) { const hx = gj % C.MW, hy = (gj / C.MW) | 0; if (!(hx === hh.lx + 2 && hy === hh.ly + hh.h - 1)) continue; c *= 3; } } if (pl) c = Math.max(6, Math.round(c / (1 + 0.3 * pl)));
+      let c = TILE_COST[t]; const pl = W.path[gj]; if (W.hutVer) { if (WMAP && WMAP.has(gj)) continue; const hh = houseAt(gj % C.MW, (gj / C.MW) | 0); if (hh) { const hx = gj % C.MW, hy = (gj / C.MW) | 0; if (!(hx === hh.lx + 2 && hy === hh.ly + hh.h - 1)) continue; c *= 3; } } if (pl) c = Math.max(6, Math.round(c / (1 + 0.3 * pl)));
       if (dx && dy) c = Math.round(c * 1.41);
       const nd = d[i] + c; if (nd < d[j] && hn < N * 4 - 1) { d[j] = nd; push(j, nd); }
     }
   }
-  F = { cx: T.cx, cy: T.cy, d, raft, t: W.tick, pv: W.pathVer, hv: W.hutVer || 0, x0, y0, w: MW, h: MH, at: flowAt }; FLOW.set(T.id, F); return F;
+  F = { cx: T.cx, cy: T.cy, d, raft, wv: WMAPV, t: W.tick, pv: W.pathVer, hv: W.hutVer || 0, x0, y0, w: MW, h: MH, at: flowAt }; FLOW.set(T.id, F); return F;
 }
 function moveVia(n, O, tx, ty, speed) { return moveHome(n, O, tx, ty, speed); }
 function reachable(T, x, y) { const F = flowFor(T); if (dist(x, y, T.cx, T.cy) > FLOW_R - 2) return true; return F.at((y | 0) * C.MW + (x | 0)) < 1e9; }
@@ -563,7 +564,7 @@ function decide(n) {
   const dCamp = dist(n.x, n.y, T.cx, T.cy);
 
   if (night || n.energy < 18) add('sleep', (night ? 1.3 : 0) + (100 - n.energy) / 90);
-  if (n.sick > 0 || n.injured > 0) add('rest', 0.9);
+  if (n.sick > 0 || n.injured > 0) add('rest', 0.9 + (n.injured > 4 || n.health < 50 ? 0.9 : 0));
   const food = n.inv.food + n.inv.meat;
   if (n.hunger > 35) { const urgent = n.hunger > 80 ? 2.5 : 0; if (food > 0) add('eat', n.hunger / 45 + 0.3 + urgent); else if (T.store.food >= 1) add('eat', n.hunger / 50 + 0.25 - dCamp / 80 + (dCamp < 9 || inTown(T, n.x, n.y) ? 0.4 : 0) + urgent); }
   if (n.warmth < 40) add('warm', (40 - n.warmth) / 20 + 0.3);
@@ -590,7 +591,7 @@ function decide(n) {
     const eg = n.exp.gather, eh = n.exp.hunt;
     add('gather', provNeed * workMul * (0.35 + eg / 12) * (1.1 - tr.mut * 0.3));
     if (age >= 14) add('hunt', provNeed * workMul * (0.15 + eh / 14) * (0.5 + tr.mut * 0.9) * (n.injured ? 0.2 : 1));
-    if (n.know.fischen && age >= 12) add('fish', provNeed * workMul * (0.2 + n.exp.fish / 12));
+    if (n.know.fischen && age >= 12 && season !== 3) add('fish', provNeed * workMul * (0.4 + n.exp.fish / 9) + (nearWater(T) ? 0.12 : 0));
     // Feuer
     const fuelWant = season >= 2 ? 120 : 45;
     if (T.fire.lit && T.fire.fuel < fuelWant) add('wood', (fuelWant - T.fire.fuel) / fuelWant * (0.6 + tr.mitgefuehl * 0.6) * workMul + (T.fire.fuel < 25 ? 0.9 : 0) + (T.fire.fuel < 8 ? 1.2 : 0));
@@ -612,7 +613,7 @@ function decide(n) {
       if (n.know.flechten && n.tools.korb <= 0) add('craft', 0.4, { what: 'korb' });
       if (n.know.bogen && !(n.tools.bogen > 0) && age >= 14) add('craft', 0.55 + tr.mut * 0.3, { what: 'bogen' });
       if (n.know.toepfern && T.pots < pop / 3 && T.fire.lit) add('craft', 0.35 + tr.geschick * 0.3, { what: 'topf' });
-      if (n.know.huette && (T.huts.length < Math.ceil(pop / 6) || (n.know.steinbau && T.huts.some(h => !h.stone))) && age >= 15) add('build', 0.45 + (season >= 2 ? 0.4 : 0) + tr.mitgefuehl * 0.2);
+      if (n.know.huette && age >= 15 && busyBuilders(T) < 1 + Math.floor(pop / 10)) { const site = T.town && Object.values(T.town.lots).some(L => L.kind === 'bau' && lotFree(L, n)), furn = T.huts.some(h => h.furn !== undefined && h.furn < FURN_MAX); if (T.huts.length < Math.ceil(pop / 6) || site || (n.know.steinbau && T.huts.some(h => !h.stone))) add('build', 0.45 + (season >= 2 ? 0.4 : 0) + tr.mitgefuehl * 0.2 + (site ? 0.25 : 0)); else if (furn) add('build', 0.3 + tr.geschick * 0.2); }
     }
     // Sesshaftigkeit: Felder, Vieh, Reusen, Bauten
     if (age >= 13 && n.know.ackerbau) { const fw = fieldWork(T); if (fw) add('farm', provNeed * 0.9 + 0.35 + (season === 2 ? 0.4 : 0)); }
@@ -630,6 +631,7 @@ function decide(n) {
     let maxB = 0; for (const k in n.beliefs) maxB = Math.max(maxB, n.beliefs[k]);
     if (maxB > 0.4) add('ritual', maxB * tr.fromm * 0.5);
     if (n.know.malerei && T.paintings.length < 8 && age >= 14) add('paint', (tr.fromm + tr.neugier) * 0.17);
+    if (age >= 14 && W.corpses && W.corpses.length && !W.raids.some(r => r.to === T.id)) { const cb = corpseFor(n, T); if (cb) add('bury', cb.score, { corpse: cb.c.id }); }
     if (n.know.heilkraeuter && T.members.some(id => { const m = NPC.get(id); return m && (m.sick > 0 || m.injured > 0); })) add('heal', 0.5 + tr.mitgefuehl * 0.6);
   } else if (dCamp > 4) add('sleep', 1.0);
 
@@ -658,6 +660,14 @@ function choose(n, opts) {
 // =====================================================================
 //  Handlungen
 // =====================================================================
+// Ablageplätze: Holzstapel und Steinhaufen neben dem Feuer, Essen ins Vorratshaus
+function stockSpot(T, kind) {
+  if (kind === 'wood') return [T.cx - 2.2, T.cy + 1.2];
+  if (kind === 'stone') return [T.cx - 2.4, T.cy - 1.6];
+  if (T.storehouse && T.storehouse.lx !== undefined) return doorOut(T.storehouse);
+  return [T.cx + 2, T.cy - 0.6];
+}
+const BUSY_ACT = { raid: 1, defend: 1, hide: 1, down: 1, };
 const AWAY = { gather: 1, hunt: 1, explore: 1, wood: 1, fish: 1, craft: 1, build: 1, paint: 1, heal: 1, fetchfire: 1, raid: 1, diplo: 1, herd: 1, visit: 1 };
 function startAct(n, o) {
   const T = tribeOf(n);
@@ -674,7 +684,9 @@ function startAct(n, o) {
       let hx = T.cx, hy = T.cy;
       let bed = null; if ((o.type === 'sleep' || o.type === 'warm' || o.type === 'rest') && T.huts.length) { const h = T.huts[n.id % T.huts.length]; hx = h.x; hy = h.y; if (h.lx !== undefined) { const B = bedsOf(h); bed = B[Math.floor(n.id / T.huts.length) % B.length]; } }
       const spread = o.type === 'sleep' && !T.huts.length ? 7 : 3.5;
-      if (bed) { a.tx = bed[0] + (rnd() - 0.5) * 0.3; a.ty = bed[1]; } else { a.tx = hx + (rnd() - 0.5) * spread; a.ty = hy + (rnd() - 0.5) * spread; } a.what = o.what; a.forStore = o.forStore; break;
+      if (bed) { a.tx = bed[0] + (rnd() - 0.5) * 0.3; a.ty = bed[1]; } else { a.tx = hx + (rnd() - 0.5) * spread; a.ty = hy + (rnd() - 0.5) * spread; } a.what = o.what; a.forStore = o.forStore;
+      if (o.type === 'deliver' && !n.carryFire) { const food = n.inv.food + n.inv.meat > 0, p = stockSpot(T, food ? 'food' : n.inv.wood > 0 ? 'wood' : n.inv.stone > 0 ? 'stone' : 'food'); a.tx = p[0] + (rnd() - 0.5) * 0.5; a.ty = p[1] + (rnd() - 0.5) * 0.3; }
+      break;
     }
     case 'fetch': { a.what = o.what; const p = itemSpot(T); a.tx = p[0] + (rnd() - 0.5) * 0.6; a.ty = p[1]; break; }
     case 'eat': {
@@ -705,7 +717,7 @@ function startAct(n, o) {
       break;
     }
     case 'fish': { const shore = (x, y) => W.t[y * C.MW + x] >= T_SHORE && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => W.t[(y + dy) * C.MW + x + dx] <= T_SHALLOW); const p = nearestTile(n.x, n.y, 18, shore) || [T.cx, T.cy]; a.tx = p[0]; a.ty = p[1]; break; }
-    case 'wood': { const fr = (x, y) => W.t[y * C.MW + x] === T_FOREST && reachable(T, x, y) && okToForage(n, T, x, y, false); const p = nearestTile(T.cx, T.cy, 14, fr) || nearestTile(T.cx, T.cy, 30, fr) || nearestTile(T.cx, T.cy, 50, fr); if (p) { a.tx = p[0]; a.ty = p[1]; } else { const b = bushesNear(T.cx, T.cy, 15).find(b => reachable(T, b.x, b.y)); a.tx = b ? b.x : T.cx + 3; a.ty = b ? b.y : T.cy; a.brush = 1; } break; }
+    case 'wood': { const fr = (x, y) => W.t[y * C.MW + x] === T_FOREST && reachable(T, x, y) && okToForage(n, T, x, y, false); const p = nearestTile(T.cx, T.cy, 14, fr) || nearestTile(T.cx, T.cy, 30, fr) || nearestTile(T.cx, T.cy, 50, fr); if (p) { a.tree = treeOf(p); [a.tx, a.ty] = besideTile(p); } else { const b = bushesNear(T.cx, T.cy, 15).find(b => reachable(T, b.x, b.y)); a.tx = b ? b.x : T.cx + 3; a.ty = b ? b.y : T.cy; a.brush = 1; } break; }
     case 'social': {
       const cands = T.members.map(id => NPC.get(id)).filter(m => m && m !== n && !(m.act && m.act.type === 'sleep') && dist(m.x, m.y, T.cx, T.cy) < 8);
       const single = c => !n.partner && !c.partner && c.sex !== n.sex && ageY(n) >= 16 && ageY(c) >= 16 ? 25 : 0;
@@ -726,7 +738,8 @@ function startAct(n, o) {
     case 'fetchfire': { if (o.fire) { a.tx = o.fire.x; a.ty = o.fire.y; a.fire = 1; } else { const F = TRIBE.get(o.from); a.tx = F.cx; a.ty = F.cy; a.from = o.from; } break; }
     case 'raid': case 'return': { a.tx = o.tx; a.ty = o.ty; a.raid = o.raid; break; }
     case 'theft': { a.victim = o.victim; break; }
-    case 'defend': { a.tx = o.tx; a.ty = o.ty; break; }
+    case 'defend': case 'hide': case 'down': { a.raid = o.raid; a.tx = n.x; a.ty = n.y; break; }
+    case 'bury': { a.corpse = o.corpse; break; }
     case 'farm': { const f = fieldWork(T); if (!f) { a.t = 99; break; } a.fi = f.i; a.job = f.job; a.tx = (f.i % C.MW) + 0.5; a.ty = ((f.i / C.MW) | 0) + 0.5; break; }
     case 'herd': { let best = null, bd = 40; for (const g of W.animals) if (HERD_K[g.k] && !g.tribe && n.know[HERD_K[g.k]]) { const d = dist(g.x, g.y, T.cx, T.cy); if (d < bd && reachable(T, g.x, g.y)) { bd = d; best = g; } } if (!best) { a.t = 99; break; } a.goat = best.id; a.tx = best.x; a.ty = best.y; break; }
     case 'trap': { const shore = (x, y) => W.t[y * C.MW + x] >= T_SHORE && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => W.t[(y + dy) * C.MW + x + dx] === T_SHALLOW) && reachable(T, x, y); const p = nearestTile(T.cx, T.cy, 16, shore) || nearestTile(T.cx, T.cy, 30, shore); if (!p) { a.t = 99; T.noTrap = W.tick; break; } a.tx = p[0]; a.ty = p[1]; break; }
@@ -764,8 +777,8 @@ function stepNpc(n) {
   if (!a) return decide(n);
   if (n.hunger > 55 && n.inv.food + n.inv.meat > 0 && a.type !== 'eat') { if (n.inv.food > 0) { n.inv.food--; n.hunger -= 40; } else { n.inv.meat--; n.hunger -= 42; } }
   // Bei Hunger-Notfall abbrechen
-  if (n.hunger > 72 && a.type !== 'eat' && (n.inv.food + n.inv.meat > 0 || T.store.food >= 1) && a.type !== 'raid' && !a.hungry) { a.hungry = 1; return decide(n); }
-  if (n.warmth < 30 && a.type !== 'warm' && a.type !== 'sleep' && a.type !== 'eat' && !n.carryFire && a.type !== 'raid' && !a.cold) { a.cold = 1; return decide(n); }
+  if (n.hunger > 72 && a.type !== 'eat' && (n.inv.food + n.inv.meat > 0 || T.store.food >= 1) && !BUSY_ACT[a.type] && !a.hungry) { a.hungry = 1; return decide(n); }
+  if (n.warmth < 30 && a.type !== 'warm' && a.type !== 'sleep' && a.type !== 'eat' && !n.carryFire && !BUSY_ACT[a.type] && !a.cold) { a.cold = 1; return decide(n); }
 
   if ((W.tick + n.id) % 6 === 0 && age >= 13 && a && (a.type === 'gather' || a.type === 'hunt' || a.type === 'wood' || a.type === 'fish' || a.type === 'explore' || a.type === 'craft' || a.type === 'build')) { borderCheck(n, T); if (n.alive === false || n.act !== a) return; }
   const at = () => {
@@ -806,15 +819,17 @@ function stepNpc(n) {
     case 'fish': {
       if (a.stage === 0) { if (at()) a.stage = 1; else if (++a.t > 80) n.act = null; break; }
       if (++a.t > 8) {
-        const p = 0.35 + n.tr.geschick * 0.35 + (n.tools.speer > 0 ? 0.1 : 0);
-        const got = rnd() < p ? rint(2, 5) : 0; n.inv.food += got; n.exp.fish = n.exp.fish * 0.85 + got * 0.15 * 3;
+        const p = 0.45 + n.tr.geschick * 0.35 + (n.tools.speer > 0 ? 0.1 : 0) + (TK(T, 'netz') ? 0.15 : 0);
+        const got = rnd() < p ? rint(3, 6) + (TK(T, 'netz') ? 2 : 0) : 0; n.inv.food += got; n.exp.fish = n.exp.fish * 0.8 + got * 0.2 * 3; insightCtx(n, 'water', 0.6);
         a.stage = 2; a.tx = T.cx; a.ty = T.cy; n.act = null; if (got) startAct(n, { type: 'deliver' });
       } else insightCtx(n, 'water', 0.12);
       break;
     }
     case 'wood': {
       if (a.stage === 0) { if (at()) a.stage = 1; break; }
-      if (++a.t > (n.tools.faustkeil > 0 ? 4 : 7)) { n.inv.wood += a.brush ? 1 : 3; if (n.tools.faustkeil > 0) n.tools.faustkeil -= 1; harvestTile(n.x, n.y, n.tools.faustkeil > 0 ? 0.5 : 0.25, T); insightCtx(n, 'wood', 0.5); startAct(n, { type: 'deliver' }); }
+      if (a.tree && W.t[a.tree[1] * C.MW + a.tree[0]] !== T_FOREST) a.tree = null;
+      if (a.tree ? !chopAt(n, a, a.tree[0], a.tree[1], axeTicks(n, T)) : ++a.t <= 7) break;
+      n.inv.wood += a.brush ? 1 : 3; if (n.tools.faustkeil > 0) n.tools.faustkeil -= 1; if (a.tree) harvestTile(a.tree[0], a.tree[1], n.tools.faustkeil > 0 || TK(T, 'steinbeil') ? 0.6 : 0.3, T); insightCtx(n, 'wood', 0.5); startAct(n, { type: 'deliver' });
       break;
     }
     case 'social': {
@@ -897,7 +912,10 @@ function stepNpc(n) {
     }
     case 'raid': stepRaid(n, T, a, at); break;
     case 'theft': stepTheft(n, T, a); break;
-    case 'defend': { if (a.stage === 0) { if (moveToward(n, a.tx, a.ty, 1)) a.stage = 1; } else if (++a.t > C.TPD * 5) n.act = null; break; }
+    case 'defend': stepDefend(n, T, a); break;
+    case 'hide': stepHide(n, T, a); break;
+    case 'down': stepDown(n, T, a); break;
+    case 'bury': stepBury(n, T, a); break;
     case 'watch': stepWatch(n, a); break;
     case 'farm': stepFarm(n, T, a, at); break;
     case 'herd': stepHerd(n, T, a); break;
@@ -913,6 +931,7 @@ function stepNpc(n) {
 
 function preachKey(n) { return Object.keys(n.beliefs).find(k => k.startsWith('kult:') && W.beliefs[k]?.founder === n.id) || ''; }
 
+function nearWater(T) { if (T._wetC === undefined || T._wetX !== T.cx) { T._wetX = T.cx; T._wetC = !!nearestTile(T.cx, T.cy, 14, (x, y) => W.t[y * C.MW + x] === T_SHALLOW); } return T._wetC; }
 function eat(n, T) {
   let fullness = 0;
   const home = houseAt(n.x, n.y), cooked = n.know.kochen && T.fire.lit && (dist(n.x, n.y, T.cx, T.cy) < 6 || (home && T.huts.includes(home)));
@@ -951,7 +970,10 @@ function talk(n, m) {
     }
   }
   // Paarbildung
-  if (n.sex !== m.sex && !n.partner && !m.partner && ageY(n) >= 16 && ageY(m) >= 16 && n.tribe === m.tribe && !n.parents.includes(m.id) && !m.parents.includes(n.id) && !(n.parents[0] && n.parents[0] === m.parents[0]) && (n.rel[m.id] || 0) > 22 && (m.rel[n.id] || 0) > 18) {
+  // Werben: wer gefallen will, schmückt sich – daraus entsteht Schmuck
+  if (n.sex !== m.sex && !n.partner && !m.partner && ageY(n) >= 14 && ageY(m) >= 14) { insightCtx(n, 'court', 1.5); insightCtx(m, 'court', 1); }
+  const adorn = (n.know.schmuck ? 4 : 0) + (m.know.schmuck ? 4 : 0);
+  if (n.sex !== m.sex && !n.partner && !m.partner && ageY(n) >= 16 && ageY(m) >= 16 && n.tribe === m.tribe && !n.parents.includes(m.id) && !m.parents.includes(n.id) && !(n.parents[0] && n.parents[0] === m.parents[0]) && (n.rel[m.id] || 0) > 22 - adorn && (m.rel[n.id] || 0) > 18 - adorn) {
     n.partner = m.id; m.partner = n.id; memo(n, `ist nun mit ${m.name} zusammen`); memo(m, `ist nun mit ${n.name} zusammen`);
   }
 }
@@ -1144,14 +1166,16 @@ function stepCraft(n, T, a, at) {
         const test = k === 'stone' ? (x, y) => W.flint[y * C.MW + x] || W.t[y * C.MW + x] === T_HILLS : k === 'wood' || k === 'fiber' ? (x, y) => W.t[y * C.MW + x] === T_FOREST : (x, y) => W.clay[y * C.MW + x];
         const p = nearestTile(n.x, n.y, 18, test) || nearestTile(n.x, n.y, 35, test);
         if (!p) { n.act = null; return; }
-        a.stage = 1; a.mat = k; a.tx = p[0]; a.ty = p[1]; a.t = 0; return;
+        a.stage = 1; a.mat = k; a.tree = treeOf(p); [a.tx, a.ty] = k === 'wood' || k === 'stone' ? besideTile(p) : [p[0] + 0.5, p[1] + 0.5]; a.t = 0; return;
       }
     }
     a.stage = 2; a.tx = T.cx + (rnd() - 0.5) * 3; a.ty = T.cy + (rnd() - 0.5) * 3; return;
   }
   if (a.stage === 1) {
-    if (at() || ++a.t > 150) {
-      const k = a.mat, i = ((n.y | 0) * C.MW) + (n.x | 0);
+    if (a.t < 999) { if (at() || ++a.t > 150) a.t = 999; else return; }
+    if (!chopAt(n, a, a.tree[0], a.tree[1], a.mat === 'stone' ? 9 : a.mat === 'wood' ? axeTicks(n, T) : 6)) return;
+    {
+      const k = a.mat, i = a.tree[1] * C.MW + a.tree[0];
       n.inv[k] += k === 'fiber' ? 3 : k === 'clay' ? 2 : 1;
       if (k === 'stone') { insightCtx(n, 'stone', 1); if (W.flint[i]) insightCtx(n, 'knap', 0.5); }
       if (k === 'clay' && T.fire.lit) insightCtx(n, 'clayfire', 0.3);
@@ -1171,55 +1195,130 @@ function stepCraft(n, T, a, at) {
   }
 }
 
+// ---------------------------------------------------------------- Bauen: Schritt für Schritt
+// Pflöcke stecken · Boden stampfen (2) · vier Wände · Dach (2) · Tür – danach die Einrichtung, Stück für Stück
+const HUT_STEPS = 10, FURN_MAX = 7;
+const HUT_WOOD = [1, 0, 0, 1, 1, 1, 1, 1, 0, 0], STONE_WOOD = [1, 0, 0, 0, 0, 0, 0, 1, 0, 0];
+const HUT_STEP_TXT = ['steckt die Ecken der neuen Hütte ab', 'stampft den Boden der neuen Hütte', 'stampft den Boden der neuen Hütte', 'baut die Rückwand', 'baut die linke Wand', 'baut die rechte Wand', 'baut die Vorderwand', 'deckt das Dach', 'deckt das Dach', 'setzt die Tür ein'];
+// Wo am Bauplatz wird gerade gearbeitet?
+function sitePos(P, step) {
+  const x0 = P.x0, y0 = P.y0, w = P.w, h = P.h;
+  return [[x0 + 0.4, y0 + h - 0.4], [x0 + 1.2, y0 + 1.5], [x0 + w - 1.2, y0 + 2.6], [x0 + w / 2, y0 + 0.9], [x0 + 0.8, y0 + h / 2], [x0 + w - 0.8, y0 + h / 2], [x0 + 1, y0 + h - 0.7], [x0 + w / 2, y0 + h + 0.4], [x0 + w / 2, y0 + h + 0.4], [x0 + 2.5, y0 + h + 0.4]][step] || [P.cx, P.cy];
+}
+// Am Baum hauen oder am Fels klopfen: dauert ein paar Schläge
+function chopAt(n, a, x, y, ticks) {
+  if (!a.wkT) { a.wkT = 1; a.chop = (y | 0) * C.MW + (x | 0); n.flip = x + 0.5 < n.x; }
+  a.wk = 1;
+  if (++a.wkT < ticks) return false;
+  a.wkT = 0; a.wk = 0; a.chop = 0; return true;
+}
+// Baum oder Fels neben sich ansteuern (nicht mitten hinein – man steht am Stamm)
+const treeOf = p => [p[0] | 0, p[1] | 0], besideTile = p => [(p[0] | 0) + 0.15, (p[1] | 0) + 0.95];
+function axeTicks(n, T) { return TK(T, 'kupfer_guss') ? 4 : TK(T, 'steinbeil') ? 5 : n.tools.faustkeil > 0 ? 6 : 9; }
+function hutNeeds(T, P, stoneHut, replacing) {
+  if (replacing) return { wood: stoneHut ? 2 : 6, stone: stoneHut ? 8 : 0 };
+  const st = P.prog || 0;
+  return { wood: (stoneHut ? STONE_WOOD : HUT_WOOD)[st] || 0, stone: stoneHut && st >= 3 && st <= 6 ? 2 : 0 };
+}
+function busyBuilders(T) { const k = W.tick >> 3; if (T._nbT !== k) { T._nbT = k; let c = 0; for (const id of T.members) { const m = NPC.get(id); if (m && m.act && m.act.type === 'build') c++; } T._nb = c; } return T._nb; }
+function lotFree(L, n) { if (!L.busy || L.busy === n.id) return true; const o = NPC.get(L.busy); return !(o && o.act && o.act.type === 'build' && o.act.lot === L.i + ',' + L.j); }
 function stepBuild(n, T, a, at) {
   const stoneHut = !!n.know.steinbau;
-  if (a.stage === 0 && stoneHut && n.inv.stone + T.store.stone < 8) {
-    let p = null;
-    if (T.quarry) { const [qx, qy] = T.quarry; if (W.t[(qy | 0) * C.MW + (qx | 0)] >= T_HILLS) p = T.quarry; else { // Steinbruch wandert weiter
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) if (W.t[((qy | 0) + dy) * C.MW + (qx | 0) + dx] >= T_HILLS) { p = [qx + dx, qy + dy]; break; } } }
-    if (!p) p = nearestTile(T.cx, T.cy, 20, (x, y) => W.t[y * C.MW + x] >= T_HILLS) || nearestTile(T.cx, T.cy, 45, (x, y) => W.t[y * C.MW + x] >= T_HILLS);
-    if (!p) { n.act = null; return; }
-    if (!T.quarry) chron(1, `Die ${T.name} beginnen, Stein aus dem Fels zu brechen.`, { tribe: T.id });
-    T.quarry = p;
-    a.tx = p[0]; a.ty = p[1]; a.stage = 4; a.t = 0; return;
-  }
-  if (a.stage === 4) { if (moveToward(n, a.tx, a.ty, 1) || ++a.t > 150) { a.stage = 5; a.t = 0; } return; }
-  if (a.stage === 5) { if (++a.t > 6) { n.inv.stone += 4; harvestTile(n.x, n.y, 4, T); insightCtx(n, 'stone', 0.5); a.stage = 0; } return; }
+  const O = townOrigin(T);
   if (a.stage === 0) {
-    if (n.inv.wood + T.store.wood >= (stoneHut ? 2 : 6)) {
-      // Parzelle: ein altes Haus ersetzen, eine angefangene Baustelle fortsetzen oder eine neue Parzelle abstecken
-      const O = townOrigin(T);
-      let P = null;
-      if (T.huts.length >= Math.ceil(T.members.length / 5)) { const old = T.huts.find(h => !h.stone && !h.mud && h.lot); if (old) P = O.lots[old.lot]; }
-      if (!P) P = Object.values(O.lots).find(L => L.kind === 'bau' && !L.busy);
-      if (!P) P = allocLot(T, 'bau');
-      if (!P) { n.act = null; return; }
-      P.busy = n.id; a.lot = P.i + ',' + P.j; a.tx = P.cx; a.ty = P.cy + 1.5;
-      a.stage = 2;
-      return;
+    let P = a.lot ? O.lots[a.lot] : null;
+    if (!P && !a.furnish) {
+      // Einrichtung fehlt in einem fertigen Haus?
+      const hf = T.huts.find(h => h.lx !== undefined && h.furn !== undefined && h.furn < FURN_MAX && (!h.fb || h.fb === n.id || !NPC.get(h.fb)));
+      const enough = T.huts.length >= Math.ceil(T.members.length / 6) && !Object.values(O.lots).some(L => L.kind === 'bau' && lotFree(L, n));
+      if (hf && (enough || rnd() < 0.4)) { hf.fb = n.id; a.furnish = hf.lot; a.stage = 0; }
+      else {
+        if (T.huts.length >= Math.ceil(T.members.length / 5)) { const old = T.huts.find(h => !h.stone && !h.mud && h.lot && stoneHut); if (old) P = O.lots[old.lot]; }
+        if (!P) P = Object.values(O.lots).find(L => L.kind === 'bau' && lotFree(L, n));
+        if (!P && T.huts.length < Math.ceil(T.members.length / 5) + 1 && Object.values(O.lots).filter(L => L.kind === 'bau').length < 1 + Math.floor(T.members.length / 20)) P = allocLot(T, 'bau');
+        if (!P) { n.act = null; return; }
+        P.busy = n.id; a.lot = P.i + ',' + P.j;
+      }
     }
-    const p = nearestTile(n.x, n.y, 16, (x, y) => W.t[y * C.MW + x] === T_FOREST) || nearestTile(n.x, n.y, 35, (x, y) => W.t[y * C.MW + x] === T_FOREST);
-    if (!p) { n.act = null; return; }
-    a.tx = p[0]; a.ty = p[1]; a.stage = 1; a.t = 0; return;
-  }
-  if (a.stage === 1) { if (moveToward(n, a.tx, a.ty, 1) || ++a.t > 120) { n.inv.wood += 3; if (n.tools.faustkeil > 0) harvestTile(n.x, n.y, 3, T); a.stage = 0; } return; }
-  if (a.stage === 2) { if (moveToward(n, a.tx, a.ty, 1)) { a.stage = 3; a.t = 0; } return; }
-  if (++a.t > (TK(T, 'wagen') ? 15 : 24)) {
-    const O = townOrigin(T), P = O.lots[a.lot];
+    // Material besorgen
+    const replacing = !!a.lot && T.huts.some(h => h.lot === a.lot);
+    const need = a.furnish ? { wood: 1, stone: 0 } : hutNeeds(T, P, stoneHut, replacing);
+    if (n.inv.stone + T.store.stone < need.stone) {
+      let p = null;
+      if (T.quarry) { const [qx, qy] = T.quarry; if (W.t[(qy | 0) * C.MW + (qx | 0)] >= T_HILLS) p = T.quarry; else { // Steinbruch wandert weiter
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) if (W.t[((qy | 0) + dy) * C.MW + (qx | 0) + dx] >= T_HILLS) { p = [qx + dx, qy + dy]; break; } } }
+      if (!p) p = nearestTile(T.cx, T.cy, 20, (x, y) => W.t[y * C.MW + x] >= T_HILLS) || nearestTile(T.cx, T.cy, 45, (x, y) => W.t[y * C.MW + x] >= T_HILLS);
+      if (!p) { n.act = null; return; }
+      if (!T.quarry) chron(1, `Die ${T.name} beginnen, Stein aus dem Fels zu brechen.`, { tribe: T.id });
+      T.quarry = p; a.rock = treeOf(p); [a.tx, a.ty] = besideTile(p); a.stage = 4; a.t = 0; return;
+    }
+    if (n.inv.wood + T.store.wood < need.wood) {
+      const p = nearestTile(n.x, n.y, 16, (x, y) => W.t[y * C.MW + x] === T_FOREST) || nearestTile(n.x, n.y, 35, (x, y) => W.t[y * C.MW + x] === T_FOREST);
+      if (!p) { n.act = null; return; }
+      a.tree = treeOf(p); [a.tx, a.ty] = besideTile(p); a.stage = 1; a.t = 0; return;
+    }
+    if (a.furnish) { const h = T.huts.find(h => h.lot === a.furnish); if (!h) { n.act = null; return; } const B = bedsOf(h), b = B[Math.min(B.length - 1, Math.max(0, (h.furn || 0) - 1))]; a.tx = b[0]; a.ty = b[1]; a.stage = 6; a.t = 0; return; }
     if (!P) { n.act = null; return; }
+    [a.tx, a.ty] = replacing ? [P.cx, P.cy + 1.5] : sitePos(P, P.prog || 0);
+    a.stage = 2; return;
+  }
+  // Holz schlagen – der Baum wackelt, bis er fällt
+  if (a.stage === 1) {
+    if (a.t < 999 && !(moveToward(n, a.tx, a.ty, 1) || ++a.t > 150)) return;
+    a.t = 999;
+    if (W.t[a.tree[1] * C.MW + a.tree[0]] !== T_FOREST) { a.stage = 0; a.wkT = 0; a.wk = 0; return; }
+    if (!chopAt(n, a, a.tree[0], a.tree[1], axeTicks(n, T))) return;
+    n.inv.wood += TK(T, 'steinbeil') ? 4 : 3; harvestTile(a.tree[0], a.tree[1], 3, T); insightCtx(n, 'wood', 0.3); a.stage = 0; return;
+  }
+  if (a.stage === 2) { if (moveToward(n, a.tx, a.ty, 1) || dist(n.x, n.y, a.tx, a.ty) < 0.6) { a.stage = 3; a.t = 0; } else if (++a.t > 300) n.act = null; return; }
+  // Stein brechen
+  if (a.stage === 4) { if (moveToward(n, a.tx, a.ty, 1) || ++a.t > 150) { a.stage = 5; a.t = 0; } return; }
+  if (a.stage === 5) { if (!chopAt(n, a, a.rock[0], a.rock[1], 9)) return; n.inv.stone += 4; harvestTile(a.rock[0], a.rock[1], 4, T); insightCtx(n, 'stone', 0.5); a.stage = 0; return; }
+  // Einrichten: Bett, Lager, Feuerstelle, Matten
+  if (a.stage === 6) {
+    const h = T.huts.find(h => h.lot === a.furnish); if (!h) { n.act = null; return; }
+    if (a.t < 999) { if (moveToward(n, a.tx, a.ty, 1) || dist(n.x, n.y, a.tx, a.ty) < 0.7) a.t = 999; else return; }
+    a.wk = 1; if (++a.t < 999 + 10) return;
+    const w = Math.min(1, n.inv.wood); n.inv.wood -= w; T.store.wood = Math.max(0, T.store.wood - (1 - w));
+    h.furn = Math.min(FURN_MAX, (h.furn || 0) + 1); h.fb = 0; insightCtx(n, 'build', 0.3);
+    n.act = null; return;
+  }
+  // stage 3: am Bauplatz arbeiten
+  const P = O.lots[a.lot];
+  if (!P) { n.act = null; return; }
+  const wi = T.huts.findIndex(h => h.lot === a.lot);
+  if (wi >= 0) {
+    // ein altes Haus durch ein besseres ersetzen
+    a.wk = 1;
+    if (++a.t <= (TK(T, 'wagen') ? 15 : 24)) return;
     P.busy = 0;
-    const wi = T.huts.findIndex(h => h.lot === a.lot);
-    if (wi < 0 && T.huts.length >= Math.ceil(T.members.length / 5)) { n.act = null; return; }
-    if (wi >= 0) T.huts.splice(wi, 1);
-    P.kind = 'house';
     const wn = stoneHut ? 2 : 6, w = Math.min(wn, n.inv.wood); n.inv.wood -= w; T.store.wood = Math.max(0, T.store.wood - (wn - w));
     if (stoneHut) { const st = Math.min(8, n.inv.stone); n.inv.stone -= st; T.store.stone = Math.max(0, T.store.stone - (8 - st)); }
-    T.huts.push(houseFromLot(P, { by: n.name, t: W.tick, stone: stoneHut && !TK(T, 'lehmziegel'), mud: TK(T, 'lehmziegel') })); W.hutVer = (W.hutVer || 0) + 1;
-    insightCtx(n, 'build', 1);
+    const old = T.huts[wi]; T.huts.splice(wi, 1);
+    T.huts.push(houseFromLot(P, { by: n.name, t: W.tick, stone: stoneHut && !TK(T, 'lehmziegel'), mud: TK(T, 'lehmziegel'), furn: old.furn })); W.hutVer = (W.hutVer || 0) + 1;
     if (stoneHut && T.huts.filter(h => h.stone).length === 1) chron(2, `${n.name} errichtet das erste Steinhaus der ${T.name}.`, { npc: n.id, tribe: T.id });
-    else if (T.huts.length === 1) chron(2, `${n.name} errichtet die erste Hütte der ${T.name}.`, { npc: n.id, tribe: T.id });
-    n.act = null;
+    n.act = null; return;
   }
+  const st = P.prog || 0;
+  P.stone = stoneHut && !TK(T, 'lehmziegel'); P.mud = TK(T, 'lehmziegel'); P.by = P.by || n.name;
+  { const [sx, sy] = sitePos(P, st); if (dist(n.x, n.y, sx, sy) > 0.7) { moveToward(n, sx, sy, 1); return; } }
+  a.wk = 1; a.step = st;
+  if (++a.t < (TK(T, 'wagen') ? 8 : 12)) return;
+  a.t = 0;
+  const need = hutNeeds(T, P, stoneHut, false);
+  if (n.inv.wood + T.store.wood < need.wood || n.inv.stone + T.store.stone < need.stone) { a.stage = 0; a.wk = 0; return; }
+  const w = Math.min(need.wood, n.inv.wood); n.inv.wood -= w; T.store.wood = Math.max(0, T.store.wood - (need.wood - w));
+  const s2 = Math.min(need.stone, n.inv.stone); n.inv.stone -= s2; T.store.stone = Math.max(0, T.store.stone - (need.stone - s2));
+  P.prog = st + 1; insightCtx(n, 'build', 0.15);
+  if (P.prog < HUT_STEPS) { a.wk = 0; if (rnd() < 0.5 || n.hunger > 50) { P.busy = 0; n.act = null; } else a.stage = 0; return; } // nächster Schritt – oder erst einmal etwas anderes tun
+  // fertig
+  P.busy = 0; P.kind = 'house'; delete P.prog;
+  T.huts.push(houseFromLot(P, { by: P.by || n.name, t: W.tick, stone: P.stone, mud: P.mud, furn: 0 })); W.hutVer = (W.hutVer || 0) + 1;
+  insightCtx(n, 'build', 1);
+  if (stoneHut && T.huts.filter(h => h.stone).length === 1) chron(2, `${n.name} errichtet das erste Steinhaus der ${T.name}.`, { npc: n.id, tribe: T.id });
+  else if (T.huts.length === 1) chron(2, `${n.name} errichtet die erste Hütte der ${T.name}.`, { npc: n.id, tribe: T.id });
+  memo(n, 'hat eine Hütte fertig gebaut');
+  n.act = null;
 }
 
 function wolfAttack(n) {
@@ -1410,14 +1509,17 @@ function stepConstruct(n, T, a, at) {
     if (n.inv.wood + T.store.wood >= need) {
       if (a.what === 'store') { const O = townOrigin(T); let P = Object.values(O.lots).find(L => L.kind === 'store'); if (!P) P = allocLot(T, 'store'); if (!P) { n.act = null; return; } a.lot = P.i + ',' + P.j; a.tx = P.cx; a.ty = P.cy + 1.5; }
       else if (BUILD_NEED[a.what]) { const p = placeBuild(T, a.what); if (p) { a.tx = p[0]; a.ty = p[1]; } else { const k = T.bld?.wall || 0, ang = k / 28 * 6.283; a.tx = T.cx + Math.cos(ang) * 13; a.ty = T.cy + Math.sin(ang) * 13; } }
-      else { const k = T.pal || 0, ang = k / 24 * 6.283; a.tx = T.cx + Math.cos(ang) * 10; a.ty = T.cy + Math.sin(ang) * 10; }
+      else { const k = T.pal || 0, WL = T.town ? townWall(T) : null, per = WL ? WL.tiles : null;
+        if (per && per.length) { const q = per[Math.min(per.length - 1, Math.floor(k / 24 * per.length))]; const dx = T.cx - q[0], dy = T.cy - q[1], l = Math.hypot(dx, dy) || 1; a.tx = q[0] + 0.5 + dx / l * 1.2; a.ty = q[1] + 0.5 + dy / l * 1.2; }
+        else { const ang = k / 24 * 6.283; a.tx = T.cx + Math.cos(ang) * 10; a.ty = T.cy + Math.sin(ang) * 10; } }
       a.stage = 2; a.t = 0; return;
     }
     const fr = (x, y) => W.t[y * C.MW + x] === T_FOREST && reachable(T, x, y);
     const p = nearestTile(T.cx, T.cy, 16, fr) || nearestTile(T.cx, T.cy, 35, fr); if (!p) { n.act = null; return; }
-    a.tx = p[0]; a.ty = p[1]; a.stage = 1; a.t = 0; return;
+    a.tree = treeOf(p); [a.tx, a.ty] = besideTile(p); a.stage = 1; a.t = 0; return;
   }
-  if (a.stage === 1) { if (at() || ++a.t > 150) { n.inv.wood += TK(T, 'steinbeil') ? 4 : 3; harvestTile(n.x, n.y, 1, T); a.stage = 0; } return; }
+  if (a.stage === 1) { if (a.t < 999) { if (at() || ++a.t > 150) a.t = 999; else return; } if (W.t[a.tree[1] * C.MW + a.tree[0]] === T_FOREST && !chopAt(n, a, a.tree[0], a.tree[1], axeTicks(n, T))) return; n.inv.wood += TK(T, 'steinbeil') ? 4 : 3; harvestTile(a.tree[0], a.tree[1], 1, T); a.stage = 0; return; }
+  if (a.stage === 2 || a.stage === 3) a.wk = a.stage === 3 ? 1 : 0;
   if (a.stage === 2) { if (at() || dist(n.x, n.y, a.tx, a.ty) < 1.2) { a.stage = 3; a.t = 0; } return; }
   if (++a.t < (TK(T, 'wagen') ? 7 : 12)) return;
   const w = Math.min(need, n.inv.wood); n.inv.wood -= w; T.store.wood = Math.max(0, T.store.wood - (need - w));
@@ -1687,44 +1789,19 @@ function alliesOutraged(E, attacker) {
 // ---------- Überfälle ----------
 // ---------- Eroberung: Belagerung und Schlacht statt Raubzug ----------
 function warPower(m) { const T = tribeOf(m); return (TK(T, 'kupfer_guss') ? 0.35 : 0) + (TK(T, 'heer') ? 0.25 : 0) + 0.6 + m.tr.mut * 0.8 + m.tr.geschick * 0.5 + (m.tools.bogen > 0 ? 0.6 : m.tools.speer > 0 ? 0.4 : 0) - (m.injured > 0 ? 0.5 : 0) + (ageY(m) > 50 ? -0.3 : 0); }
-function stepConquest(n, T, E, R, a) {
-  if (!R.arrived) {
-    R.arrived = W.tick;
-    // Die Verteidiger sammeln sich am Lager
-    for (const id of E.members) { const m = NPC.get(id); if (m && ageY(m) >= 15 && ageY(m) < 60 && !m.injured && dist(m.x, m.y, E.cx, E.cy) < (E.R || 14) && (m.tr.mut > 0.25 || id === E.leader)) startAct(m, { type: 'defend', tx: E.cx + (rnd() - 0.5) * 6, ty: E.cy + (rnd() - 0.5) * 6 }); }
-    chron(2, `Die Krieger der ${T.name} stehen vor dem Lager der ${E.name}. Die ${E.name} greifen zu den Waffen.`, { tribe: E.id });
-  }
-  // Moral bricht: zu viele Gefallene auf einer Seite beenden den Kampf früher
-  if (!R.broken && (R.deaths >= Math.ceil(R.n * 0.3) || R.kills >= 6)) { R.broken = true; R.arrived = W.tick - C.TPD * 4 - 1; }
-  // umherziehen und kämpfen – Scharmützel, deren Ausgang von der Stärke beider Seiten abhängt
-  if (dist(n.x, n.y, a.ax ?? E.cx, a.ay ?? E.cy) < 1 || a.ax === undefined) { a.ax = E.cx + (rnd() - 0.5) * 8; a.ay = E.cy + (rnd() - 0.5) * 8; }
-  moveToward(n, a.ax, a.ay, 0.8);
-  if (rnd() < 0.05) {
-    const defs = E.members.map(id => NPC.get(id)).filter(m => m && ageY(m) >= 15 && !m.injured && dist(m.x, m.y, E.cx, E.cy) < 12);
-    if (!defs.length) return;
-    if (!R.powT || W.tick - R.powT > 12) { R.powT = W.tick; R.pa = W.npcs.filter(m => m.act && m.act.type === 'raid' && m.act.raid === R.id && dist(m.x, m.y, E.cx, E.cy) < 14).reduce((s, m) => s + warPower(m), 0); R.pd = defs.filter(m => m.tr.mut > 0.25).reduce((s, m) => s + warPower(m), 0) * ((E.pal || 0) >= 12 ? 1.5 : 1); }
-    const odds = clamp((R.pa - R.pd) / Math.max(1, R.pa + R.pd), -0.5, 0.5);
-    const d = pick(defs);
-    const pa = warPower(n) + rnd() + odds + 0.05, pd = warPower(d) + rnd();
-    const loser = pa > pd ? d : n, winner = loser === d ? n : d;
-    winner.prestige += 3;
-    if (rnd() < 0.18) { if (loser === d) R.kills++; else R.deaths++; die(loser, `im Krieg zwischen den ${T.name} und den ${E.name} gefallen`, winner); if (loser === n) return; }
-    else { loser.injured = rint(8, 18); if (loser === d) R.wounded = (R.wounded || 0) + 1; else { R.hurt = (R.hurt || 0) + 1; if (n.health < 40) { startAct(n, { type: 'return', tx: T.cx, ty: T.cy }); return; } } }
-  }
-}
 function resolveConquest(R) {
   const T = TRIBE.get(R.from), E = TRIBE.get(R.to);
-  const raiders = W.npcs.filter(m => m.act && m.act.type === 'raid' && m.act.raid === R.id);
+  const raiders = raidersOf(R);
   for (const m of raiders) startAct(m, { type: 'return', tx: T ? T.cx : m.x, ty: T ? T.cy : m.y });
-  for (const id of (E ? E.members : [])) { const m = NPC.get(id); if (m && m.act && m.act.type === 'defend') m.act = null; }
+  for (const id of (E ? E.members : [])) { const m = NPC.get(id); if (m && m.act && (m.act.type === 'defend' || m.act.type === 'hide')) m.act = null; }
   if (!T || !E || !T.alive || !E.alive) return;
-  const atk = raiders.filter(m => dist(m.x, m.y, E.cx, E.cy) < 14).reduce((a, m) => a + warPower(m), 0);
-  const defenders = E.members.map(id => NPC.get(id)).filter(m => m && ageY(m) >= 15 && ageY(m) < 60 && !m.injured && m.tr.mut > 0.25 && dist(m.x, m.y, E.cx, E.cy) < 12);
+  const atk = raiders.filter(m => fitToFight(m) && dist(m.x, m.y, E.cx, E.cy) < warZone(E) + 4).reduce((a, m) => a + warPower(m), 0);
+  const defenders = E.members.map(id => NPC.get(id)).filter(m => m && ageY(m) >= 15 && ageY(m) < 60 && fitToFight(m) && m.tr.mut > 0.25 && dist(m.x, m.y, E.cx, E.cy) < warZone(E));
   let def = defenders.reduce((a, m) => a + warPower(m), 0) * ((E.bld?.wall || 0) >= 28 ? 2.1 : (E.pal || 0) >= 12 ? 1.5 : 1);
   R.atk = atk; R.def = def;
   const LE = NPC.get(E.leader);
   const morale = R.kills - R.deaths + ((R.wounded || 0) - (R.hurt || 0)) * 0.5;
-  if (atk > def * 0.95 || (atk > def * 0.7 && morale >= 3)) {
+  if (R.won || (!R.retreat && (atk > def * 0.95 || (atk > def * 0.7 && morale >= 3)))) {
     // Sieg: die Unterlegenen werden Teil der Sieger – nicht alle fügen sich
     const proud = E.members.map(id => NPC.get(id)).filter(m => m && ageY(m) >= 15 && m.tr.stur + m.tr.mut > 1.35 && (m.rel[T.leader] || 0) < 20);
     const flee = W.tribes.filter(o => o.alive && o !== T && o !== E && (o.rel[E.id] ?? -99) > 0 && reachable(E, o.cx, o.cy)).sort((a, b) => dist(a.cx, a.cy, E.cx, E.cy) - dist(b.cx, b.cy, E.cx, E.cy))[0];
@@ -1752,41 +1829,12 @@ function stepRaid(n, T, a, at) {
   const R = W.raids.find(r => r.id === a.raid);
   if (!R) { n.act = null; return; }
   const E = TRIBE.get(R.to);
-  if (!E || !E.alive) { startAct(n, { type: 'return', tx: T.cx, ty: T.cy }); return; }
+  if (!E || !E.alive || R.retreat) { startAct(n, { type: 'return', tx: T.cx, ty: T.cy }); return; }
   a.tx = E.cx; a.ty = E.cy;
-  if (dist(n.x, n.y, E.cx, E.cy) > 4) { moveVia(n, E, a.tx, a.ty, 1); if (++a.t > 250) startAct(n, { type: 'return', tx: T.cx, ty: T.cy }); return; }
-  if (R.conquest) return stepConquest(n, T, E, R, a);
-  const defs = E.members.map(id => NPC.get(id)).filter(m => m && ageY(m) >= 15 && dist(m.x, m.y, n.x, n.y) < 7);
-  for (const d of defs) if (rnd() < 0.2) insightCtx(d, 'raided', 1);
-  if (defs.length) {
-    const d = pick(defs);
-    const pa = n.tr.mut + n.tr.geschick * 0.6 + (n.tools.bogen > 0 ? 0.55 : n.tools.speer > 0 ? 0.4 : 0) + rnd();
-    const pd = d.tr.mut + d.tr.geschick * 0.6 + (d.tools.bogen > 0 ? 0.55 : d.tools.speer > 0 ? 0.4 : 0) + rnd() + 0.2 + palBonus(d);
-    const loser = pa > pd ? d : n, winner = loser === d ? n : d;
-    winner.prestige += 4;
-    if (rnd() < 0.3) { if (loser === d) R.kills++; else R.deaths++; die(loser, `beim Überfall der ${T.name} auf die ${E.name} getötet`, winner); if (loser === n) return; }
-    else { loser.injured = rint(6, 16); if (loser === n) { startAct(n, { type: 'return', tx: T.cx, ty: T.cy }); return; } }
-  }
-  const take = Math.min(E.store.food, (E.pal || 0) >= 12 ? 6 : 15); E.store.food -= take; R.loot += take;
-  if (!R.felt) { R.felt = 1; nudgeTribe(E, 'rache', 0.04, m => 1 - m.tr.mitgefuehl); nudgeTribe(E, 'krieger', 0.03, m => m.tr.mut); nudgeTribe(E, 'gast', -0.03); nudgeTribe(T, 'krieger', 0.015); nudgeTribe(T, 'ruhm', 0.01); }
-  // Vieh wegtreiben
-  if (rnd() < 0.3) { const g = W.animals.find(x => HERD_K[x.k] && x.tribe === E.id); if (g) { g.tribe = T.id; R.goats = (R.goats || 0) + 1; } }
-  for (const k of ['hide', 'stone', 'wood']) { const t2 = Math.min(E.store[k], 3); E.store[k] -= t2; T.store[k] += t2; }
-  // Gefangene verschleppen
-  if (R.kills > R.deaths && rnd() < 0.25 * (1 + Math.max(0, cvOf(T, 'unfreiheit')) * 1.5)) {
-    const cap = E.members.map(id => NPC.get(id)).find(m => m && ageY(m) >= 8 && ageY(m) < 22 && dist(m.x, m.y, n.x, n.y) < 8 && E.leader !== m.id);
-    if (cap) {
-      E.members.splice(E.members.indexOf(cap.id), 1); T.members.push(cap.id); cap.tribe = T.id; cap.act = null;
-      if (cap.partner) { const p = NPC.get(cap.partner); if (p) p.partner = 0; cap.partner = 0; }
-      addRel(cap, n, -60); for (const id of cap.parents) { const p = NPC.get(id); if (p) { addRel(p, n, -80); memo(p, `${cap.name} wurde von den ${T.name} verschleppt`); } }
-      memo(cap, `wurde von ${n.name} zu den ${T.name} verschleppt`);
-      if (cvOf(T, 'unfreiheit') > 0.25 && ageY(cap) >= 12) { cap.unfrei = { t: W.tick, from: E.id }; memo(cap, `muss den ${T.name} als Knecht dienen`); }
-      else if (cvOf(T, 'blut') < -0.2) memo(cap, `wurde von den ${T.name} wie ein eigenes Kind aufgenommen`);
-      R.captives = (R.captives || 0) + 1;
-      if (!E.members.length && E.alive) { E.alive = false; chron(3, `Die ${E.name} sind ausgelöscht.`, { tribe: E.id }); }
-    }
-  }
-  startAct(n, { type: 'return', tx: T.cx, ty: T.cy }); n.act.loot = take;
+  if (!R.arrived && dist(n.x, n.y, E.cx, E.cy) > warZone(E) * 0.7) { moveVia(n, E, a.tx, a.ty, 1); if (++a.t > 300) startAct(n, { type: 'return', tx: T.cx, ty: T.cy }); return; }
+  if (R.arrived && dist(n.x, n.y, E.cx, E.cy) > warZone(E) + 6 && !a.foe) { moveVia(n, E, a.tx, a.ty, 1); return; }
+  for (const id of E.members) { const d = NPC.get(id); if (d && rnd() < 0.01 && dist(d.x, d.y, n.x, n.y) < 7) insightCtx(d, 'raided', 1); }
+  raidAtTarget(n, T, E, R, a);
 }
 
 // =====================================================================
@@ -1808,18 +1856,12 @@ function die(n, cause, killer) {
   // Trauer -> Bestattung
   const mourners = [...n.kids, n.partner, ...n.parents].map(id => NPC.get(id)).filter(m => m && m.tribe === n.tribe);
   for (const m of mourners) { insightCtx(m, 'grief', 160 * (0.5 + m.tr.fromm)); if (rnd() < 0.5) memo(m, `trauert um ${n.name}`); }
-  const buried = T && T.members.some(id => NPC.get(id)?.know.bestattung);
-  if (buried) {
-    if (!T.cem) { for (let k = 0; k < 30; k++) { const ang = rnd() * 6.283; const x = T.cx + Math.cos(ang) * 8, y = T.cy + Math.sin(ang) * 8; if (tileAt(x, y) >= T_GRASS && tileAt(x, y) <= T_HILLS) { T.cem = [x, y]; break; } } if (!T.cem) T.cem = [T.cx + 6, T.cy]; }
-    const gi = W.graves.filter(g => g.tribe === T.id).length;
-    const gx = T.cem[0] + ((gi % 6) - 2.5) * 0.9, gy = T.cem[1] + (Math.floor(gi / 6) % 6 - 2.5) * 0.9;
-    W.graves.push({ x: gx, y: gy, name: n.name, t: W.tick, tribe: T.id }); if (W.graves.length > 600) W.graves.shift();
-  }
+  addCorpse(n, killer);
   const age = Math.floor(ageY(n));
   if (T && (cause === 'verhungert' || cause === 'erfroren')) { T.winterDeaths++; T.winterDeathsY = (T.winterDeathsY || 0) + 1; }
   if (T && cause === 'an einer Krankheit gestorben') { nudgeTribe(T, 'heilig', 0.012); nudgeTribe(T, 'reinheit', 0.015); }
   const important = n.notable || (T && T.leader === n.id);
-  chron(important ? 2 : 1, `${fullName(n)} (${T ? T.name : '?'}, ${age} J.) ist ${cause}.${buried && important ? ' Die Sippe begräbt ihn mit Gaben.'.replace('ihn', n.sex === 'f' ? 'sie' : 'ihn') : ''}`, { npc: n.id, tribe: n.tribe, dead: true });
+  chron(important ? 2 : 1, `${fullName(n)} (${T ? T.name : '?'}, ${age} J.) ist ${cause}.`, { npc: n.id, tribe: n.tribe, dead: true });
   // Wissensverlust prüfen
   if (T) {
     for (const k in n.know) {
@@ -1915,6 +1957,7 @@ function tribeTick(T) {
   const ad = adults(T), pop = T.members.length;
   if (!T.leader || !NPC.get(T.leader) || NPC.get(T.leader).tribe !== T.id) chooseLeader(T);
   const L = NPC.get(T.leader);
+  neighborPressure(T); if (!T.alive) return;
   T.R = territoryRadius(T);
   for (const k in T.trespass) T.trespass[k] *= 0.85;
   planDiplomacy(T, L);
@@ -2138,6 +2181,7 @@ function stepAnimals() {
 }
 function dailyTick() {
   const day = dayNum(), season = seasonNow(), dayOfYear = day % C.DPY;
+  corpseDaily();
   // Büsche wachsen
   const grow = [1.4, 2, 3.2, 0][season];
   for (const b of W.bushes) b.f = Math.min(b.max, b.f + Math.floor(grow) + (rnd() < grow % 1 ? 1 : 0));
@@ -2242,12 +2286,12 @@ function dailyTick() {
   for (let i = W.raids.length - 1; i >= 0; i--) {
     const R = W.raids[i];
     if (R.conquest) {
-      if ((R.arrived && W.tick - R.arrived > C.TPD * 4) || W.tick - R.t > C.TPD * 16) { resolveConquest(R); W.raids.splice(i, 1); }
+      if (R.won || (R.retreat && !raidersOf(R).length) || (R.arrived && W.tick - R.arrived > C.TPD * 4) || W.tick - R.t > C.TPD * 16) { resolveConquest(R); W.raids.splice(i, 1); }
       continue;
     }
-    if (W.tick - R.t > C.TPD * 12) {
+    if (W.tick - R.t > C.TPD * 12 || (W.tick - R.t > C.TPD && !raidersOf(R).length)) {
       const T = TRIBE.get(R.from), E = TRIBE.get(R.to);
-      chron(3, `Der Überfall der ${T?.name} auf die ${E?.name} ist vorbei: ${R.kills} Verteidiger und ${R.deaths} Angreifer fielen, ${Math.round(R.loot)} Vorräte wurden geplündert${R.goats ? `, ${R.goats} Ziegen weggetrieben` : ''}${R.captives ? `, ${R.captives} Menschen verschleppt` : ''}.`, { tribe: R.from });
+      chron(3, `Der Überfall der ${T?.name} auf die ${E?.name} ist vorbei: ${R.kills} Verteidiger und ${R.deaths} Angreifer fielen, ${R.wounded ? R.wounded + ' Verwundete, ' : ''}${Math.round(R.loot)} Vorräte wurden geplündert${R.goats ? `, ${R.goats} Ziegen weggetrieben` : ''}${R.captives ? `, ${R.captives} Menschen verschleppt` : ''}.`, { tribe: R.from });
       W.raids.splice(i, 1);
     }
   }
@@ -2266,6 +2310,7 @@ function stepWorld() {
   if (W.tick % C.TPD === 0) dailyTick();
   if (W.tick % 3 === 0) { for (const a of W.animals) { a.px = a.x; a.py = a.y; } stepAnimals(); }
   for (let i = W.npcs.length - 1; i >= 0; i--) { const n = W.npcs[i]; if (n) stepNpc(n); }
+  corpseTick();
 }
 
 // ---------- Eingriffe des Beobachters ----------
@@ -2315,7 +2360,8 @@ function whisperLeader(L, kind, targetId) {
 // ---------- Speichern ----------
 function serialize() {
   return JSON.stringify(W, (k, v) => {
-    if (k === 'b' && v && v.id && v.max) return { id: v.id }; // Büsche in Erinnerungen per ID
+    if (k === 'b' && v && v.id && v.max) return { id: v.id };
+    if ((k === 'wall' || k === 'reach') && v && typeof v === 'object' && !Array.isArray(v)) return undefined; // Büsche in Erinnerungen per ID
     if ((k === 't' || k === 'clay' || k === 'flint') && Array.isArray(v) && v.length === C.MW * C.MH) return v.join('');
     if ((k === 'pv' || k === 'cv' || k === 'core') && Array.isArray(v)) return v.map(x => Math.round(x * 1000) / 1000);
     if (k === 'foot' && v && typeof v === 'object') { const o = {}; for (const i in v) if (v[i] >= 3) o[i] = Math.round(v[i]); return o; }
@@ -2325,7 +2371,7 @@ function serialize() {
 function deserialize(str) {
   W = JSON.parse(str);
   for (const k of ['t', 'clay', 'flint']) if (typeof W[k] === 'string') W[k] = Array.from(W[k], Number);
-  W.res = W.res || {}; W.cut = W.cut || {}; W.foot = W.foot || {}; W.path = W.path || {}; W.pathVer = W.pathVer || 0; W.fields = W.fields || {};
+  W.corpses = W.corpses || []; W.res = W.res || {}; W.cut = W.cut || {}; W.foot = W.foot || {}; W.path = W.path || {}; W.pathVer = W.pathVer || 0; W.fields = W.fields || {};
   for (const T of W.tribes) { T.traps = T.traps || []; T.access = T.access || {}; T.trespass = T.trespass || {}; T.debt = T.debt || {}; T.grudge = T.grudge || {}; T.treaties = T.treaties || []; T.R = T.R || 14; }
   if (W.MW) { C.MW = W.MW; C.MH = W.MH; } else { C.MW = 400; C.MH = 270; W.MW = 400; W.MH = 270; }
   if (W.t.length !== C.MW * C.MH) throw new Error('Spielstand passt nicht zur Kartengröße');

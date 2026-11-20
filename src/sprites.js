@@ -133,6 +133,9 @@ const TALK_ACTS = { social: 1, ritual: 1, preach: 1, visit: 1, diplo: 1, play: 1
 function spriteFrame(n, moving, t) {
   const a = n.act;
   if (a && a.type === 'sleep' && a.stage === 1) return { row: 3, col: 0, sleep: true };
+  if (a && (a.type === 'down' || (a.type === 'rest' && a.stage === 1 && n.injured > 0))) return { row: 3, col: 0, sleep: true, hurt: true };
+  if (a && a.wk && !moving) { const row = n.face === 'up' ? 1 : n.face === 'side' ? 2 : 0; return { row, col: 4 + (Math.floor(t * 5 + n.id) % 2) }; }
+  if (a && (a.type === 'raid' || a.type === 'defend') && a.foe && !moving) { const row = n.face === 'up' ? 1 : n.face === 'side' ? 2 : 0; return { row, col: 4 + (Math.floor(t * 6 + n.id) % 2), fight: true }; }
   const row = n.face === 'up' ? 1 : n.face === 'side' ? 2 : 0;
   if (moving) return { row, col: [1, 0, 3, 2][Math.floor(t * 7 + n.id) % 4] };
   if (a && WORK_ACTS[a.type] && a.stage >= 1) return { row, col: 4 + (Math.floor(t * 3.5 + n.id) % 2) };
@@ -178,6 +181,9 @@ function toolCanvas(name) {
 function heldTool(n, a) {
   if (!a) return null;
   const t = a.type;
+  if ((t === 'raid' || t === 'defend') && typeof weaponOf === 'function') { const f = a.foe && NPC.get(a.foe); if (n.tools.bogen > 0 && (!f || dist(n.x, n.y, f.x, f.y) > 2.2)) return 'bogen'; const w = weaponOf(n); return w === 'faust' ? null : w; }
+  if (a.chop && a.wk) { const Tn = tribeOf(n), k = W.t[a.chop]; if (k === T_FOREST) return TK(Tn, 'kupfer_guss') ? 'kupferaxt' : TK(Tn, 'steinbeil') ? 'beil' : n.tools.faustkeil > 0 ? 'faustkeil' : null; return 'faustkeil'; }
+  if (t === 'bury' && a.stage === 2) return 'hacke';
   if (t === 'hunt' || t === 'raid' || t === 'defend' || t === 'watch') return n.tools.bogen > 0 ? 'bogen' : n.tools.speer > 0 ? (TK(tribeOf(n), 'kupfer_guss') ? 'kspeer' : 'speer') : (ageY(n) >= 13 ? 'keule' : null);
   if (t === 'fish') return TK(tribeOf(n), 'netz') ? 'netz' : n.tools.speer > 0 ? 'speer' : null;
   const Tn = typeof tribeOf === 'function' ? tribeOf(n) : null;

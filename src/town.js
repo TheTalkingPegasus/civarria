@@ -20,38 +20,42 @@ function townReach(T, O) {
 function lotOK(T, O, i, j) {
   const [x0, y0] = lotXY(O, i, j);
   const RE = townReach(T, O); if (!RE.has((y0 + LOTW) * C.MW + x0 + 2)) return false; // die Tür muss vom Platz aus erreichbar sein
+  const GT = graveTiles(); // nie auf Gräbern bauen
+  for (let y = y0 - 4; y < y0 + LOTW + 4; y += 2) for (let x = x0 - 4; x < x0 + LOTW + 4; x += 2) if (townOcc(x, y, T.id)) return false; // Abstand zu Nachbarsiedlungen
   for (let y = y0; y < y0 + LOTW; y++) for (let x = x0; x < x0 + LOTW; x++) {
     if (x < 2 || y < 2 || x >= C.MW - 2 || y >= C.MH - 2) return false;
     const k = y * C.MW + x, t = W.t[k];
-    if (t < T_SHORE || t === T_MOUNT || W.fields[k]) return false;
+    if (t < T_SHORE || t === T_MOUNT || W.fields[k] || GT.has(k)) return false;
     if (OWN && OWN[k] && OWN[k] !== T.id) return false;
   }
   return true;
 }
-// freie Parzelle(n) suchen – von innen nach außen, Ring für Ring
-function allocLot(T, kind, wl = 1, hl = 1) {
+// freie Parzelle(n) suchen – von innen nach außen, Ring für Ring (Friedhöfe ab Ring minR, also am Rand)
+function allocLot(T, kind, wl = 1, hl = 1, minR = 1) {
   const O = townOrigin(T);
   if (!O.lots['0,0']) O.lots['0,0'] = { kind: 'plaza' };
-  for (let r = 1; r <= 6; r++) {
+  for (let r = minR; r <= 6; r++) {
     const cand = [];
     for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) if (Math.max(Math.abs(i), Math.abs(j)) === r || (wl > 1 || hl > 1)) cand.push([i, j]);
     cand.sort((a, b) => (Math.abs(a[0]) + Math.abs(a[1])) - (Math.abs(b[0]) + Math.abs(b[1])) || hash3(T.id, a[0], a[1]) - hash3(T.id, b[0], b[1]));
     for (const [i, j] of cand) {
       let ok = true;
       for (let b = 0; b < hl && ok; b++) for (let a = 0; a < wl && ok; a++) { const key = (i + a) + ',' + (j + b); if (O.lots[key] || !lotOK(T, O, i + a, j + b)) ok = false; }
-      if (!ok) continue;
-      const P = { kind, i, j, wl, hl }; for (let b = 0; b < hl; b++) for (let a = 0; a < wl; a++) O.lots[(i + a) + ',' + (j + b)] = P;
-      const [x0, y0] = lotXY(O, i, j); P.x0 = x0; P.y0 = y0; P.w = wl * LOT - 1; P.h = hl * LOT - 1;
-      P.cx = x0 + P.w / 2; P.cy = y0 + P.h / 2;
-      // Bauplatz roden – auch Beerensträucher verschwinden
-      for (const bu of bushesNear(P.cx, P.cy, 4)) if (bu.x >= x0 && bu.x < x0 + P.w && bu.y >= y0 && bu.y < y0 + P.h) { bu.gone = 1; bu.f = 0; bu.max = 0; }
-      for (const id of T.members) { const m = NPC.get(id); if (m && m.spots.length) m.spots = m.spots.filter(s => !s.b.gone); }
-      for (let y = y0; y < y0 + P.h; y++) for (let x = x0; x < x0 + P.w; x++) { const k = y * C.MW + x; if (W.t[k] === T_FOREST) { W.t[k] = T_GRASS; W.cut[k] = 'f'; if (HOOKS.onTile) HOOKS.onTile(x, y); } }
-      T.townVer = (T.townVer || 0) + 1; if (!W.hutVer) W.hutVer = 1;
-      return P;
+      if (ok) return claimLot(T, O, kind, i, j, wl, hl);
     }
   }
   return null;
+}
+function claimLot(T, O, kind, i, j, wl = 1, hl = 1) {
+  const P = { kind, i, j, wl, hl }; for (let b = 0; b < hl; b++) for (let a = 0; a < wl; a++) O.lots[(i + a) + ',' + (j + b)] = P;
+  const [x0, y0] = lotXY(O, i, j); P.x0 = x0; P.y0 = y0; P.w = wl * LOT - 1; P.h = hl * LOT - 1;
+  P.cx = x0 + P.w / 2; P.cy = y0 + P.h / 2;
+  // Bauplatz roden – auch Beerensträucher verschwinden
+  for (const bu of bushesNear(P.cx, P.cy, 4)) if (bu.x >= x0 && bu.x < x0 + P.w && bu.y >= y0 && bu.y < y0 + P.h) { bu.gone = 1; bu.f = 0; bu.max = 0; }
+  for (const id of T.members) { const m = NPC.get(id); if (m && m.spots.length) m.spots = m.spots.filter(s => !s.b.gone); }
+  for (let y = y0 - 1; y <= y0 + P.h; y++) for (let x = x0 - 1; x <= x0 + P.w; x++) { const k = y * C.MW + x; if (W.t[k] === T_FOREST || W.cut[k]) { if (W.t[k] === T_FOREST) W.t[k] = T_GRASS; delete W.cut[k]; if (HOOKS.onTile) HOOKS.onTile(x, y); } } // Stümpfe werden gerodet
+  T.townVer = (T.townVer || 0) + 1; if (!W.hutVer) W.hutVer = 1;
+  return P;
 }
 function freeLot(T, P) { const O = T.town; if (!O || !P) return; for (const k in O.lots) if (O.lots[k] === P) delete O.lots[k]; W.hutVer = (W.hutVer || 0) + 1; }
 const hash3 = (a, b, c) => { let h = (a * 73856093) ^ (b * 19349663) ^ (c * 83492791); h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
@@ -88,7 +92,7 @@ let WMAP = null, WMAPV = '';
 let WMAPT = -1;
 function wallAt(x, y) {
   if (WMAPT !== W.tick) { WMAPT = W.tick; const v = (W.hutVer || 0) + ':' + W.tribes.reduce((a, T) => a + (T.alive && T.town ? (T.pal || 0) + (T.bld?.wall || 0) * 100 + (T.townVer || 0) * 7 : 0), 0);
-  if (v !== WMAPV) { WMAPV = v; WMAP = new Set(); for (const T of W.tribes) { if (!T.alive || !T.town) continue; const isW = (T.bld?.wall || 0) > 0, prog = isW ? T.bld.wall / BUILD_NEED.wall : (T.pal || 0) / 24; if (prog <= 0) continue; const R = townRect(T), per = townPerimeter(R), n = Math.round(per.length * Math.min(1, prog)); for (let k = 0; k < n; k++) WMAP.add(per[k][1] * C.MW + per[k][0]); } } }
+  if (v !== WMAPV) { WMAPV = v; WMAP = new Set(); for (const T of W.tribes) { if (!T.alive || !T.town) continue; const isW = (T.bld?.wall || 0) > 0, prog = isW ? T.bld.wall / BUILD_NEED.wall : (T.pal || 0) / 24; if (prog <= 0) continue; const per = townWall(T).tiles, n = Math.round(per.length * Math.min(1, prog)); for (let k = 0; k < n; k++) WMAP.add(per[k][1] * C.MW + per[k][0]); } } }
   return WMAP.has((y | 0) * C.MW + (x | 0));
 }
 // darf man von Kachel (ax,ay) nach (bx,by)?
@@ -110,7 +114,7 @@ function lineClear(e, tx, ty) {
     px = x; py = y; }
   return true;
 }
-const AS_MAX = 9000, AS_G = new Float32Array(AS_MAX), AS_FROM = new Int32Array(AS_MAX), AS_STAMP = new Int32Array(AS_MAX), AS_HK = new Float32Array(AS_MAX * 4), AS_HV = new Int32Array(AS_MAX * 4); let AS_GEN = 0;
+const AS_MAX = 20000, AS_G = new Float32Array(AS_MAX), AS_FROM = new Int32Array(AS_MAX), AS_STAMP = new Int32Array(AS_MAX), AS_HK = new Float32Array(AS_MAX * 4), AS_HV = new Int32Array(AS_MAX * 4); let AS_GEN = 0;
 function aStar(e, tx, ty) {
   const sx = e.x | 0, sy = e.y | 0, gx = tx | 0, gy = ty | 0;
   const x0 = Math.min(sx, gx) - 8, y0 = Math.min(sy, gy) - 8, w = Math.abs(sx - gx) + 17, h = Math.abs(sy - gy) + 17, N = w * h;
@@ -120,7 +124,7 @@ function aStar(e, tx, ty) {
   const push = (v, k) => { let i = hn++; while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; } hk[i] = k; hv[i] = v; };
   const pop = () => { const v = hv[0], lk = hk[--hn], lv = hv[hn]; let i = 0; while (true) { let c = 2 * i + 1; if (c >= hn) break; if (c + 1 < hn && hk[c + 1] < hk[c]) c++; if (hk[c] >= lk) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; } hk[i] = lk; hv[i] = lv; return v; };
   const s = (sy - y0) * w + (sx - x0), goal = (gy - y0) * w + (gx - x0); st[s] = gen; g[s] = 0; from[s] = -1; push(s, 0); let it = 0;
-  while (hn > 0 && it++ < 2500) {
+  while (hn > 0 && it++ < 5000) {
     const c = pop(); if (c === goal) { const pts = []; let q = c; while (q >= 0 && q !== s) { pts.push([(q % w) + x0 + 0.5, ((q / w) | 0) + y0 + 0.5]); q = from[q]; } return pts.reverse(); }
     const x = (c % w) + x0, y = ((c / w) | 0) + y0, gc = g[c];
     for (let d = 0; d < 4; d++) { const X = x + (d === 0 ? 1 : d === 1 ? -1 : 0), Y = y + (d === 2 ? 1 : d === 3 ? -1 : 0); if (X < x0 || Y < y0 || X >= x0 + w || Y >= y0 + h) continue;
@@ -128,8 +132,28 @@ function aStar(e, tx, ty) {
   }
   return null;
 }
+// Liegt zwischen Figur und Ziel eine Palisade oder Mauer? Dann führt der Weg durch das nächste Tor.
+const GATE_N = { n: [0, -1], s: [0, 1], w: [-1, 0], e: [1, 0] };
+function gateWaypoint(e, tx, ty) {
+  for (const T of HMAP_W()) {
+    const WL = townWall(T), R = WL.bb;
+    if (!(e.x >= R.x0 - 3 && e.x < R.x1 + 3 && e.y >= R.y0 - 3 && e.y < R.y1 + 3) && !(tx >= R.x0 - 3 && tx < R.x1 + 3 && ty >= R.y0 - 3 && ty < R.y1 + 3)) continue;
+    const inE = townInside(WL, e.x, e.y), inT = townInside(WL, tx, ty);
+    if (inE === inT) continue;
+    let best = null, bd = 1e9;
+    for (const g of WL.gates) { if (tileAt(g[0], g[1]) < T_SHORE) continue; const d = dist(e.x, e.y, g[0], g[1]) + dist(g[0], g[1], tx, ty); if (d < bd) { bd = d; best = g; } }
+    if (!best) continue;
+    const [gx, gy, s] = best, [nx, ny] = GATE_N[s], sgn = inE ? -1 : 1; // Annäherung von der Seite, auf der die Figur steht
+    if (dist(e.x, e.y, gx, gy) < 1.7) return [gx - nx * sgn * 1.8, gy - ny * sgn * 1.8]; // am Tor: hindurch
+    return [gx + nx * sgn * 1.3, gy + ny * sgn * 1.3];
+  }
+  return null;
+}
+let TRW = null, TRWV = -1;
+function HMAP_W() { if (TRWV !== W.tick) { TRWV = W.tick; TRW = W.tribes.filter(T => T.alive && T.town && ((T.pal || 0) > 0 || (T.bld?.wall || 0) > 0)); } return TRW; }
 function navMove(e, tx, ty, speed) {
-  if (e.ghost > 0) { e.ghost--; return moveStep(e, tx, ty, speed); }
+  { const wp = gateWaypoint(e, tx, ty); if (wp) { tx = wp[0]; ty = wp[1]; } }
+  if (e.ghost > 0) { e.ghost--; return moveStep(e, tx, ty, speed) && !gateWaypoint(e, tx, ty); }
   let N = e.nav;
   if (N && N.clear && N.tx === tx && N.ty === ty && W.tick < N.until) return moveStep(e, tx, ty, speed);
   if (N && !N.clear && (Math.abs(N.tx - tx) > 0.01 || Math.abs(N.ty - ty) > 0.01) && Math.abs(N.tx - tx) + Math.abs(N.ty - ty) < 1.5 && houseAt(tx, ty) === houseAt(N.tx, N.ty)) { N.tx = tx; N.ty = ty; } // Ziel hat sich nur ein wenig bewegt
@@ -166,8 +190,52 @@ function townPerimeter(R) {
   for (let y = R.y0 + 1; y < R.y1 - 1; y++) t.push([R.x1 - 1, y, 'e']);
   for (let x = R.x1 - 1; x >= R.x0; x--) t.push([x, R.y1 - 1, 's']);
   for (let y = R.y1 - 2; y > R.y0; y--) t.push([R.x0, y, 'w']);
-  return t.filter(([x, y, s]) => !((s === 'n' || s === 's') && (x === mx || x === mx - 1)) && !((s === 'e' || s === 'w') && (y === my || y === my - 1)));
+  return t.filter(([x, y, s]) => !((s === 'n' || s === 's') && (x === mx || x === mx - 1)) && !((s === 'e' || s === 'w') && (y === my || y === my - 1)) && wallTileOK(x, y));
 }
+// ---------------------------------------------------------------- Mauerverlauf
+// Palisade und Mauer folgen den bebauten Parzellen (eine Gasse Abstand) statt einem großen Rechteck.
+// Was von außen nicht erreichbar ist, liegt innen. Tore dort, wo die Hauptgassen hinausführen.
+function townWall(T) {
+  const O = T.town; if (!O) return null;
+  if (O.wall && O.wv === T.townVer) return O.wall;
+  const occ = new Set(); let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const k in O.lots) { const [i, j] = k.split(',').map(Number); const [lx, ly] = lotXY(O, i, j);
+    for (let y = ly - 1; y <= ly + LOTW; y++) for (let x = lx - 1; x <= lx + LOTW; x++) { occ.add(y * C.MW + x); if (x < x0) x0 = x; if (y < y0) y0 = y; if (x > x1) x1 = x; if (y > y1) y1 = y; } }
+  const bb = { x0: x0 - 6, y0: y0 - 6, x1: x1 + 7, y1: y1 + 7 };
+  // Lücken zwischen den Parzellen schließen (sonst zieht sich die Palisade durch das Dorf): erst weiten, dann von außen fluten, dann wieder schrumpfen
+  const RR = 3, dil = new Set();
+  for (const i of occ) { const x = i % C.MW, y = (i / C.MW) | 0; for (let dy = -RR; dy <= RR; dy++) for (let dx = -RR; dx <= RR; dx++) dil.add((y + dy) * C.MW + x + dx); }
+  const outD = new Set(), q = [bb.y0 * C.MW + bb.x0]; outD.add(q[0]);
+  while (q.length) { const i = q.pop(), x = i % C.MW, y = (i / C.MW) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const X = x + dx, Y = y + dy; if (X < bb.x0 || Y < bb.y0 || X >= bb.x1 || Y >= bb.y1) continue; const j = Y * C.MW + X; if (outD.has(j) || dil.has(j)) continue; outD.add(j); q.push(j); } }
+  const out = new Set();
+  for (const i of outD) { const x = i % C.MW, y = (i / C.MW) | 0; for (let dy = -RR; dy <= RR; dy++) for (let dx = -RR; dx <= RR; dx++) { const X = x + dx, Y = y + dy; if (X >= bb.x0 && Y >= bb.y0 && X < bb.x1 && Y < bb.y1) out.add(Y * C.MW + X); } }
+  const tiles = [], set = new Set();
+  for (const i of out) { const x = i % C.MW, y = (i / C.MW) | 0; let adj = false; for (let dy = -1; dy <= 1 && !adj; dy++) for (let dx = -1; dx <= 1; dx++) { const X = x + dx, Y = y + dy; if (X >= bb.x0 && Y >= bb.y0 && X < bb.x1 && Y < bb.y1 && !out.has(Y * C.MW + X)) { adj = true; break; } } if (adj) { tiles.push([x, y]); set.add(i); } }
+  // Tore: wo die Gassen durch die Platzmitte hinausführen (je 2 Kacheln breit)
+  const cx = O.cx, cy = O.cy, gates = [], gateSet = new Set();
+  const pickGate = (filter, better, side) => { let b = null; for (const t of tiles) if (filter(t) && (!b || better(t, b))) b = t; if (!b) return; const pair = side === 'n' || side === 's' ? [[cx - 1, b[1]], [cx, b[1]]] : [[b[0], cy - 1], [b[0], cy]]; for (const [x, y] of pair) gateSet.add(y * C.MW + x); gates.push(side === 'n' || side === 's' ? [cx, b[1] + 0.5, side] : [b[0] + 0.5, cy, side]); };
+  pickGate(t => t[0] === cx - 1 || t[0] === cx, (a, b) => a[1] < b[1], 'n');
+  pickGate(t => t[0] === cx - 1 || t[0] === cx, (a, b) => a[1] > b[1], 's');
+  pickGate(t => t[1] === cy - 1 || t[1] === cy, (a, b) => a[0] < b[0], 'w');
+  pickGate(t => t[1] === cy - 1 || t[1] === cy, (a, b) => a[0] > b[0], 'e');
+  const own = OWN; const wt = tiles.filter(([x, y]) => !gateSet.has(y * C.MW + x) && wallTileOK(x, y) && !(own && own[y * C.MW + x] && own[y * C.MW + x] !== T.id) && !townOcc(x, y, T.id));
+  for (const t of wt) { const x = t[0], y = t[1]; t[2] = set.has(y * C.MW + x - 1) || set.has(y * C.MW + x + 1) ? 'h' : 'v'; }
+  wt.sort((a, b) => Math.atan2(a[1] - cy, a[0] - cx) - Math.atan2(b[1] - cy, b[0] - cx));
+  O.wall = { tiles: wt, gates, out, set, bb }; O.wv = T.townVer;
+  return O.wall;
+}
+function townInside(WL, x, y) { const R = WL.bb; x |= 0; y |= 0; if (x < R.x0 || y < R.y0 || x >= R.x1 || y >= R.y1) return false; const k = y * C.MW + x; return !WL.out.has(k) || false; }
+// Welche Siedlung belegt eine Kachel? (damit Siedlungen Abstand halten)
+let TOCC = null, TOCCV = '';
+function townOcc(x, y, self) {
+  const v = W.tribes.reduce((a, T) => a + (T.alive && T.town ? T.id * 7 + (T.townVer || 0) : 0), 0) + ':' + W.tribes.length;
+  if (v !== TOCCV || !TOCC || TOCC.length !== C.MW * C.MH) { TOCCV = v; if (!TOCC || TOCC.length !== C.MW * C.MH) TOCC = new Int32Array(C.MW * C.MH); else TOCC.fill(0);
+    for (const T of W.tribes) if (T.alive && T.town) for (const k in T.town.lots) { const [i, j] = k.split(',').map(Number); const [lx, ly] = lotXY(T.town, i, j); for (let yy = ly - 1; yy <= ly + LOTW; yy++) for (let xx = lx - 1; xx <= lx + LOTW; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) TOCC[yy * C.MW + xx] = T.id; } }
+  x |= 0; y |= 0; if (x < 0 || y < 0 || x >= C.MW || y >= C.MH) return 0; const o = TOCC[y * C.MW + x]; return o && o !== self ? o : 0;
+}
+// Mauern und Palisaden stehen nicht im Wasser und nicht auf Felsen – dort schützt das Gelände selbst
+function wallTileOK(x, y) { const t = tileAt(x, y); return t >= T_SHORE && t !== T_MOUNT; }
 // alte, verstreute Hütten auf das Raster umziehen (alte Spielstände, nach dem Laden)
 function ensureTown(T) {
   if (!T.alive) return;

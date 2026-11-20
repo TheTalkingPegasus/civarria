@@ -7,7 +7,7 @@ const mini = document.getElementById('mini'), mctx = mini.getContext('2d');
 const $ = id => document.getElementById(id);
 let DPR = 1, VW = 0, VH = 0;
 const cam = { x: 0, y: 0, z: 1.4, follow: 0 };
-const ui = { territory: true, speed: 1, tab: 'chron', chronFilter: 3, sel: null, selTribe: null, pauseOnDiscovery: true, labels: true, lastInspect: 0, acc: 0 };
+const ui = { territory: false, speed: 1, tab: 'chron', chronFilter: 3, sel: null, selTribe: null, pauseOnDiscovery: true, labels: true, lastInspect: 0, acc: 0 };
 const SPEEDS = [0, 1, 3, 10, 30, 100, 500];
 const TPS = 3; // Ticks pro Sekunde bei 1× (ein Tag ≈ 16 Sekunden)
 let terrain = null, miniTerrain = null, nightC = null, nctx = null;
@@ -19,6 +19,7 @@ const ACT_TXT = { fetch: 'holt etwas aus dem Lager',
   explore: 'erkundet die Gegend', watch: 'beobachtet einen Fremden im Revier', diplo: 'reist als Gesandter', experiment: 'tüftelt herum', craft: 'stellt etwas her', build: 'baut eine Hütte', ritual: 'vollzieht ein Ritual',
   preach: 'predigt seinen Glauben', paint: 'malt an eine Felswand', heal: 'sucht Heilkräuter', lightfire: 'versucht, Feuer zu entfachen',
   fetchfire: 'holt Glut für das Lager', raid: 'zieht in den Kampf', return: 'kehrt heim', idle: 'schaut sich um',
+  hide: 'versteckt sich vor den Angreifern', down: 'liegt verwundet am Boden', bury: 'kümmert sich um einen Toten',
 };
 const CTX_TXT = { craft: 'Herstellen von Dingen', fishing: 'Fischen', store: 'Vorräte anlegen', winter: 'Überwintern', paint: 'Malen', trade: 'Besuch bei anderen Sippen', talk: 'Gespräch', farm: 'Feldarbeit', sheepnear: 'Mufflons in der Nähe', cattlenear: 'Auerochsen in der Nähe', pignear: 'Wildschweine in der Nähe', donkeynear: 'Wildesel in der Nähe', herd: 'Vieh hüten', woodcut: 'Holz schlagen', cook: 'Kochen und Essen', spin: 'Fäden drehen', potter: 'Töpfern', irrigate: 'Feldarbeit am Fluss', carry: 'Lasten schleppen', count: 'Vorräte zählen', sky: 'Sterne beobachten', temple: 'Rituale in der Siedlung', crowd: 'Leben in großer Gemeinschaft', theft: 'Streit um Besitz', war: 'Kampf', stone: 'Steine sammeln', hunt: 'Jagen', knap: 'Feuerstein bearbeiten', firework: 'Holz ins Feuer legen', eatfire: 'Essen am Feuer', coldhide: 'Frieren mit Fellen', gather: 'Sammeln', water: 'Arbeiten am Wasser', coldcamp: 'Frieren im Lager', wood: 'Holz schlagen', sickgather: 'Sammeln, wenn jemand krank ist', gathercamp: 'Sammeln nahe dem Lager', grief: 'Trauer um einen Toten', ritual: 'Rituale', rest: 'Gespräche am Feuer', clayfire: 'Lehm nahe am Feuer', wolfnear: 'Jagen nahe bei Wölfen', waterblock: 'Festsitzen am Fluss', build: 'Bauen', raided: 'Überfallen werden', goatnear: 'Jagen nahe bei Wildziegen' };
 const CRAFT_TXT = { bogen: 'Pfeil und Bogen', faustkeil: 'ein Steinwerkzeug', speer: 'einen Speer', kleidung: 'Fellkleidung', korb: 'einen Korb', topf: 'einen Tontopf' };
@@ -203,7 +204,7 @@ function getCanopy(cx, cy) {
   const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
   const X0 = cx * CH, Y0 = cy * CH, trees = [];
   for (let y = Y0 - 1; y < Y0 + CH + 4; y++) for (let x = X0 - 3; x < X0 + CH + 3; x++) {
-    if (x < 0 || y < 0 || x >= C.MW || y >= C.MH || W.t[y * C.MW + x] !== T_FOREST) continue;
+    if (x < 0 || y < 0 || x >= C.MW || y >= C.MH || W.t[y * C.MW + x] !== T_FOREST || CHOPS.has(y * C.MW + x)) continue;
     const h = hash(x + 101, y + 7), h2 = hash(x + 3, y + 211);
     let kind = h < 0.55 ? 'treeRound' : 'pine';
     if (h2 < 0.035 && x > 0 && y > 0 && x < C.MW - 1 && y < C.MH - 1 && W.t[y * C.MW + x - 1] === T_FOREST && W.t[y * C.MW + x + 1] === T_FOREST && W.t[(y - 1) * C.MW + x] === T_FOREST) kind = 'treeBig';
@@ -227,6 +228,7 @@ function drawCanopy(x0, y0, x1, y1) {
   if (cam.z < 0.42) return;
   const [a, b, c, d] = chunkRange(x0, y0, x1, y1 + 3);
   for (let cy = b; cy <= d; cy++) for (let cx = a; cx <= c; cx++) ctx.drawImage(getCanopy(cx, cy), cx * CH * TS, cy * CH * TS);
+  drawWorkFx(x0, y0, x1, y1);
 }
 HOOKS.onTile = (x, y) => {
   if (!overview) return;
@@ -305,7 +307,8 @@ function draw(t) {
     if (b.f > 0 && season !== 3) { ctx.fillStyle = '#c23b4a'; const k = Math.min(5, Math.ceil(b.f / 3)); for (let i = 0; i < k; i++) { ctx.beginPath(); ctx.arc(px + Math.cos(i * 2.4) * 2.6, py + Math.sin(i * 2.4) * 2.6, 1.2, 0, 7); ctx.fill(); } }
   }
   // Gräber
-  for (const g of W.graves) { if (!inView(g.x, g.y)) continue; const px = g.x * TS, py = g.y * TS; sprC(ctx, 'mound', px, py + 1); sprC(ctx, 'pebble', px, py - 3); }
+  for (const g of W.graves) { if (!inView(g.x, g.y)) continue; drawGrave(g); }
+  if (Z > 0.45) for (const c of (W.corpses || [])) { if (c.carry || !inView(c.x, c.y)) continue; drawCorpse(c, c.x * TS, c.y * TS); }
   // Felder
   if (Z > 0.3) for (const k in W.fields) {
     const x = k % C.MW, y = (k / C.MW) | 0; if (!inView(x, y)) continue;
@@ -326,7 +329,7 @@ function draw(t) {
     // Vorräte
     const piles = T.storehouse ? 0 : Math.min(8, Math.ceil(T.store.food / 40));
     for (let i = 0; i < piles; i++) { const ax = px + 20 + (i % 4) * 7, ay = py - 14 + Math.floor(i / 4) * 7; ctx.fillStyle = '#7a5a34'; ctx.fillRect(ax, ay, 6, 6); ctx.fillStyle = '#a3311f'; ctx.fillRect(ax + 1, ay + 1, 4, 2); }
-    if (T.store.wood > 0 || T.fire.lit) for (let i = 0; i < Math.min(4, 1 + T.store.wood / 5); i++) tex(ctx, 'logEnd', px - 30 + (i % 2) * 6, py + 10 + Math.floor(i / 2) * 6, 6, 6);
+    drawStockPiles(T);
     if (T.pots > 0) for (let i = 0; i < Math.min(6, T.pots); i++) { ctx.fillStyle = '#a0583a'; ctx.beginPath(); ctx.arc(px - 22 + i * 5, py - 20, 2.2, 0, 7); ctx.fill(); }
     // Vorratshaus
     if (T.storehouse) T.storehouse.lx !== undefined ? drawStoreLot(T) : drawStorehouse(T.storehouse.x * TS, T.storehouse.y * TS, T);
@@ -339,6 +342,7 @@ function draw(t) {
     if (T.town && (T.pal || T.bld?.wall)) drawTownWall(T);
     else if (T.pal && !((T.bld?.wall || 0) >= 8)) { for (let k = 0; k < T.pal; k++) { if (k === 6 || k === 18) continue; const a0 = k / 24 * 6.283, a1 = (k + 1) / 24 * 6.283; for (let j = 0; j < 5; j++) { const an = a0 + (a1 - a0) * j / 5, r = 10 * TS; const sx = px + Math.cos(an) * r, sy = py + Math.sin(an) * r; ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(sx - 2, sy - 1, 5, 5); tex(ctx, 'logEnd', sx - 3, sy - 3, 6, 6); } } }
     // Hütten
+    if (T.town) for (const k in T.town.lots) { const P = T.town.lots[k]; if (P.kind === 'bau' && k === P.i + ',' + P.j && P.prog) drawSite(P, T); }
     for (const h of T.huts) h.lx !== undefined ? drawHouse(h, T) : h.mud ? drawMudHouse(h.x * TS, h.y * TS, h.rot, T.col) : drawHut(h.x * TS, h.y * TS, h.rot, T.col, h.stone);
     drawBuildings(T, px, py);
     // Feuer
@@ -355,8 +359,11 @@ function draw(t) {
   const sel = ui.sel ? NPC.get(ui.sel) : null;
   const drawAllNpcs = () => { for (const n of W.npcs) { if (!inView(n.x, n.y)) continue; const [x, y] = lerpPos(n); if (Z < 0.6) { const T = tribeOf(n); ctx.fillStyle = T ? T.col : '#fff'; ctx.beginPath(); ctx.arc(x * TS, y * TS, n === sel ? 9 : 5, 0, 7); ctx.fill(); ctx.strokeStyle = '#000a'; ctx.lineWidth = 1.5; ctx.stroke(); } else drawNpc(n, x * TS, y * TS, n === sel, detail); } };
   drawAllNpcs();
+  drawParticles();
   // Baumkronen über den Figuren
   drawCanopy(x0, y0, x1, y1);
+  // Holzfäller bleiben am Baum sichtbar
+  if (Z >= 0.6) for (const id of CHOPS.values()) { const n = NPC.get(id); if (n && inView(n.x, n.y)) { const [x, y] = lerpPos(n); drawNpc(n, x * TS, y * TS, n === sel, detail); } }
   // Ausgewählte Figur bleibt durch die Krone hindurch erkennbar
   if (sel && cam.z >= 0.42) { const [x, y] = lerpPos(sel); if (W.t[(y | 0) * C.MW + (x | 0)] === T_FOREST || W.t[((y | 0) + 1) * C.MW + (x | 0)] === T_FOREST) { ctx.strokeStyle = '#ffd34a'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 2]); ctx.beginPath(); ctx.arc(x * TS, y * TS, 11, 0, 7); ctx.stroke(); ctx.setLineDash([]); } }
   ctx.restore();
@@ -507,7 +514,7 @@ function drawTownGround(T) {
     if (P.kind === 'werk' && k === P.i + ',' + P.j) { if (TK(T, 'toepferscheibe')) { const c = pxCanvas('pwheel', PWHEEL_PX, FURN_PAL); ctx.drawImage(c, P.x0 * TS + 26, P.y0 * TS + 10); } if (TK(T, 'lehmziegel')) for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) { ctx.fillStyle = '#b8925c'; ctx.fillRect(P.x0 * TS + 6 + i * 9, P.y0 * TS + 40 + r * 7, 7, 4); ctx.fillStyle = '#d4b07a'; ctx.fillRect(P.x0 * TS + 6 + i * 9, P.y0 * TS + 40 + r * 7, 7, 1); } }
     if (P.kind === 'werk' && k === P.i + ',' + P.j && TK(T, 'rad')) { const wc = pxCanvas('wheel', WHEEL_PX, FURN_PAL); ctx.drawImage(wc, P.x0 * TS + 26, (P.y0 + P.h) * TS - 14); ctx.drawImage(wc, P.x0 * TS + 30, (P.y0 + P.h) * TS - 12); }
     if (P.kind === 'store' && k === P.i + ',' + P.j && TK(T, 'wagen')) { const c = pxCanvas('cart', CART_PX, { o: '#2a1e1a', w: '#9a6a3c', W: '#6a4424', r: '#8a6a44', R: '#4a3424' }); ctx.drawImage(c, (P.x0 + P.w) * TS + 1, (P.y0 + 2) * TS); }
-    if (P.kind === 'bau' && k === P.i + ',' + P.j && !T.huts.some(h => h.lot === k)) { ctx.strokeStyle = 'rgba(120,90,50,.8)'; ctx.setLineDash([3, 3]); ctx.strokeRect(P.x0 * TS + 2, P.y0 * TS + 2, P.w * TS - 4, P.h * TS - 4); ctx.setLineDash([]); for (let i = 0; i < 3; i++) tex(ctx, 'logEnd', P.x0 * TS + 10 + i * 7, P.y0 * TS + 40, 6, 6); } }
+    if (P.kind === 'cem' && k === P.i + ',' + P.j) drawCemLot(P, T); }
 }
 const roofView = () => cam.z < 1.15;
 function houseStyle(h) { return h.stone ? 'stone' : h.mud ? 'mud' : 'hut'; }
@@ -527,15 +534,18 @@ function drawHouse(h, T) {
   if (st === 'mud') { ctx.fillStyle = 'rgba(90,60,30,.18)'; for (let i = 0; i < Hd; i += 16) ctx.fillRect(X, Y + i, Wd, 1); for (let i = 0; i < Wd; i += 16) ctx.fillRect(X + i, Y, 1, Hd); }
   // Einrichtung
   const B = bedsOf(h), bp = BED_PAL[st === 'hut' ? 0 : st === 'mud' ? 1 : 2], bed = pxCanvas('bed' + st, BED_PX, bp);
-  for (let i = 0; i < 4; i++) ctx.drawImage(bed, B[i][0] * TS - 6, B[i][1] * TS - 8);
-  const mat = pxCanvas('mat', MAT_PX, FURN_PAL); ctx.drawImage(mat, B[4][0] * TS - 5, B[4][1] * TS - 3); ctx.drawImage(mat, B[5][0] * TS - 5, B[5][1] * TS - 3);
+  const fu = h.furn === undefined ? 99 : h.furn; // Einrichtung entsteht Stück für Stück: Feuerstelle, Betten, Matten, Hausrat
+  for (let i = 0; i < 4; i++) if (fu >= 2 + i) ctx.drawImage(bed, B[i][0] * TS - 6, B[i][1] * TS - 8);
+  const mat = pxCanvas('mat', MAT_PX, FURN_PAL); if (fu >= 6) ctx.drawImage(mat, B[4][0] * TS - 5, B[4][1] * TS - 3); if (fu >= 7) ctx.drawImage(mat, B[5][0] * TS - 5, B[5][1] * TS - 3);
   // Feuerstelle in der Mitte
-  const fx = dx, fy = Y + Hd * 0.52; ctx.fillStyle = '#5a5650'; for (let i = 0; i < 8; i++) ctx.fillRect(fx + Math.cos(i * 0.785) * 5 - 1.5, fy + Math.sin(i * 0.785) * 4 - 1.5, 3, 3);
-  ctx.fillStyle = '#2a201a'; ctx.fillRect(fx - 3, fy - 2, 6, 4); if (isNight() || seasonNow() === 3) { ctx.fillStyle = '#ff8a3a'; ctx.fillRect(fx - 2, fy - 1, 4, 2); ctx.fillStyle = '#ffd27a'; ctx.fillRect(fx - 1, fy - 1 - (Math.floor(FT * 6) % 2), 2, 1); }
+  const fx = dx, fy = Y + Hd * 0.52; if (fu >= 1) { ctx.fillStyle = '#5a5650'; for (let i = 0; i < 8; i++) ctx.fillRect(fx + Math.cos(i * 0.785) * 5 - 1.5, fy + Math.sin(i * 0.785) * 4 - 1.5, 3, 3);
+  ctx.fillStyle = '#2a201a'; ctx.fillRect(fx - 3, fy - 2, 6, 4); if (isNight() || seasonNow() === 3) { ctx.fillStyle = '#ff8a3a'; ctx.fillRect(fx - 2, fy - 1, 4, 2); ctx.fillStyle = '#ffd27a'; ctx.fillRect(fx - 1, fy - 1 - (Math.floor(FT * 6) % 2), 2, 1); } }
+  if (fu >= 7) {
   if (TK(T, 'toepfern')) ctx.drawImage(pxCanvas('pots', POTS_PX, FURN_PAL), X + 18, Y + 11);
   if (TK(T, 'weben')) ctx.drawImage(pxCanvas('loom', LOOM_PX, FURN_PAL), X + Wd - 30, Y + 10);
   else if (TK(T, 'mahlstein')) ctx.drawImage(pxCanvas('quern', QUERN_PX, FURN_PAL), X + Wd - 28, Y + 11);
   if (st !== 'hut') ctx.drawImage(pxCanvas('shelf', SHELF_PX, FURN_PAL), dx - 7, Y + 10);
+  }
   // Wände: hinten mit sichtbarer Wandfläche, seitlich und vorne als Mauerkrone, Tür nach Süden
   const wallFace = (x, y, w, hh) => { if (st === 'mud') brick(x, y, w, hh, '#b8925c', '#9c7a4a'); else { ctx.fillStyle = patt(ctx, st === 'stone' ? 'cobble' : 'bark'); ctx.fillRect(x, y, w, hh); } };
   wallFace(X, Y, Wd, 9); ctx.fillStyle = st === 'mud' ? '#d4b07a' : st === 'stone' ? '#8a8a90' : '#5a3d22'; ctx.fillRect(X, Y - 3, Wd, 3);
@@ -572,22 +582,23 @@ function drawPen(R) {
   ctx.fillStyle = '#c8a860'; ctx.fillRect(X + 6, Y + 8, 10, 6); ctx.fillStyle = '#a8884a'; ctx.fillRect(X + 6, Y + 8, 10, 1);
 }
 function drawTownWall(T) {
-  const R = townRect(T), per = townPerimeter(R), isWall = (T.bld?.wall || 0) > 0;
+  const WL = townWall(T); if (!WL) return; const per = WL.tiles, isWall = (T.bld?.wall || 0) > 0;
   const prog = isWall ? Math.min(1, T.bld.wall / BUILD_NEED.wall) : Math.min(1, (T.pal || 0) / 24), n = Math.round(per.length * prog);
   for (let k = 0; k < n; k++) {
-    const [x, y, s] = per[k]; if (tileAt(x, y) < T_SHORE) continue; const X = x * TS, Y = y * TS;
+    const [x, y, o] = per[k], X = x * TS, Y = y * TS;
     if (isWall) {
       ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(X + 2, Y + 12, 16, 5);
-      ctx.fillStyle = '#d4b07a'; ctx.fillRect(X, Y - 2, 16, 6); brick(X, Y + 4, 16, 10, '#b8925c', '#9c7a4a');
-      if ((x + y) % 2 === 0) { ctx.fillStyle = '#d4b07a'; ctx.fillRect(X + 2, Y - 6, 6, 4); ctx.fillStyle = '#a8844f'; ctx.fillRect(X + 2, Y - 6, 6, 1); }
+      if (o === 'h') { ctx.fillStyle = '#d4b07a'; ctx.fillRect(X, Y - 2, 16, 6); brick(X, Y + 4, 16, 10, '#b8925c', '#9c7a4a'); if ((x + y) % 2 === 0) { ctx.fillStyle = '#d4b07a'; ctx.fillRect(X + 2, Y - 6, 6, 4); ctx.fillStyle = '#a8844f'; ctx.fillRect(X + 2, Y - 6, 6, 1); } }
+      else { ctx.fillStyle = '#d4b07a'; ctx.fillRect(X + 3, Y - 4, 10, 6); brick(X + 3, Y + 2, 10, 14, '#b8925c', '#9c7a4a'); ctx.fillStyle = '#a8844f'; ctx.fillRect(X + 3, Y - 4, 1, 20); }
     } else {
       ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(X + 2, Y + 11, 16, 4);
-      for (let i = 0; i < 4; i++) { const px = X + i * 4 + 1; ctx.fillStyle = '#6b4a2b'; ctx.fillRect(px, Y - 4, 3, 16); ctx.fillStyle = '#8a6440'; ctx.fillRect(px, Y - 4, 1, 16); ctx.fillStyle = '#c8a878'; ctx.fillRect(px, Y - 6, 3, 2); ctx.fillStyle = '#4a3420'; ctx.fillRect(px + 1, Y - 7, 1, 1); }
-      ctx.fillStyle = '#5a3d22'; ctx.fillRect(X, Y + 3, 16, 1);
+      const post = (px, py) => { ctx.fillStyle = '#6b4a2b'; ctx.fillRect(px, py, 3, 14); ctx.fillStyle = '#8a6440'; ctx.fillRect(px, py, 1, 14); ctx.fillStyle = '#c8a878'; ctx.fillRect(px, py - 2, 3, 2); ctx.fillStyle = '#4a3420'; ctx.fillRect(px + 1, py - 3, 1, 1); };
+      if (o === 'h') { for (let i = 0; i < 4; i++) post(X + i * 4 + 1, Y - 4); ctx.fillStyle = '#5a3d22'; ctx.fillRect(X, Y + 3, 16, 1); }
+      else { for (let i = 0; i < 4; i++) post(X + 6 + (i % 2), Y - 6 + i * 4); ctx.fillStyle = '#5a3d22'; ctx.fillRect(X + 7, Y - 4, 1, 18); }
     }
   }
   // Torpfosten
-  if (n > per.length * 0.4) for (const g of townGates(R)) { ctx.fillStyle = isWall ? '#a8844f' : '#4a3420'; const c = isWall ? '#d4b07a' : '#8a6440';
+  if (n > per.length * 0.4) for (const g of WL.gates) { const c = isWall ? '#d4b07a' : '#8a6440';
     if (g[2] === 'n' || g[2] === 's') { const Y = Math.floor(g[1]) * TS; for (const X of [(g[0] - 1) * TS - 3, (g[0] + 1) * TS - 1]) { ctx.fillStyle = isWall ? '#a8844f' : '#4a3420'; ctx.fillRect(X, Y - 10, 4, 24); ctx.fillStyle = c; ctx.fillRect(X, Y - 10, 4, 2); } }
     else { const X = Math.floor(g[0]) * TS + 6; for (const Y of [(g[1] - 1) * TS - 4, (g[1] + 1) * TS - 2]) { ctx.fillStyle = isWall ? '#a8844f' : '#4a3420'; ctx.fillRect(X, Y - 6, 4, 14); ctx.fillStyle = c; ctx.fillRect(X, Y - 6, 4, 2); } } }
 }
@@ -672,9 +683,11 @@ function drawNpc(n, px, py, selected, detail) {
   if (T && detail) { ctx.strokeStyle = T.col; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(0, 2.5, 5, 2, 0, 0, 7); ctx.stroke(); }
   if (selected) { ctx.strokeStyle = '#ffd34a'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(0, 2.5, 8, 3.5, 0, 0, 7); ctx.stroke(); }
   if (fr.sleep) {
-    if (!houseAt(n.x, n.y)) { ctx.fillStyle = n.tools.kleidung > 0 ? '#8a6640' : '#7a6a4e'; ctx.fillRect(-8, -3, 16, 7); } // Schlaflager
+    if (fr.hurt && !houseAt(n.x, n.y)) { ctx.fillStyle = 'rgba(120,10,10,.55)'; ctx.beginPath(); ctx.ellipse(2, 3, 7, 3, 0, 0, 7); ctx.fill(); }
+    else if (!houseAt(n.x, n.y)) { ctx.fillStyle = n.tools.kleidung > 0 ? '#8a6640' : '#7a6a4e'; ctx.fillRect(-8, -3, 16, 7); } // Schlaflager
     ctx.drawImage(sheet, 0, 48, 16, 16, -8, -8, 16, 16);
-    if (detail && Math.floor(FT * 1.2 + n.id) % 3 === 0) { ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = '6px system-ui'; ctx.fillText('z', 6, -6 - (FT * 4 % 3)); }
+    if (fr.hurt) { ctx.fillStyle = '#efe6cc'; ctx.fillRect(-6, -4, 3, 2); ctx.fillStyle = '#b5302a'; ctx.fillRect(-5, -4, 1, 1); }
+    else if (detail && Math.floor(FT * 1.2 + n.id) % 3 === 0) { ctx.fillStyle = 'rgba(255,255,255,.8)'; ctx.font = '6px system-ui'; ctx.fillText('z', 6, -6 - (FT * 4 % 3)); }
     ctx.restore(); return;
   }
   const tool = detail ? heldTool(n, a) : null;
@@ -695,15 +708,18 @@ function drawNpc(n, px, py, selected, detail) {
     }
     if (a && a.type === 'farm' && a.stage >= 1 && a.job !== 'harvest' && TK(T, 'ochsen') && n.id % 2 === 0) { const o = animalCanvas('cattle'); ctx.save(); if (n.flip) ctx.scale(-1, 1); ctx.drawImage(o, 4, -o.height + 2); ctx.strokeStyle = '#6a4424'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(4, -3); ctx.lineTo(1, -1); ctx.stroke(); ctx.restore(); }
   }
+  if (fr.fight || (a && a.wk)) { const ph = (FT * (fr.fight ? 6 : 5) + n.id * 0.37) % 1, l = ph < 0.5 ? ph * 2 : (1 - ph) * 2; ctx.translate((n.face === 'side' ? (n.flip ? -1 : 1) : 0) * l * (fr.fight ? 2.2 : 0.8), (n.face === 'down' ? 1 : n.face === 'up' ? -1 : 0) * l * (fr.fight ? 1.5 : 0.5)); }
+  if (n.hitT && W.tick - n.hitT <= 1 && Math.floor(FT * 20) % 2 === 0) ctx.globalAlpha = 0.55;
   ctx.save(); if (n.face === 'side' && n.flip) ctx.scale(-1, 1);
   if (n.face === 'up') drawTool(); // von hinten: Werkzeug verdeckt
   ctx.drawImage(sheet, fr.col * 16, fr.row * 16, 16, 16, -8, -13, 16, 16);
   if (n.face !== 'up') drawTool();
-  ctx.restore();
+  ctx.restore(); ctx.globalAlpha = 1;
+  if (n.hitT && W.tick - n.hitT <= 1) { ctx.fillStyle = 'rgba(220,40,30,.85)'; ctx.fillRect(-2, -9, 2, 2); ctx.fillRect(1, -6, 1, 1); }
   if (n.sick > 0) { ctx.fillStyle = 'rgba(120,180,80,.35)'; ctx.fillRect(-4, -12, 8, 6); }
   // Oberhaupt: Federschmuck
   const top = child ? -9 : -13;
-  if (!n.copper && !child && T && TK(T, 'schmuck') && n.prestige > 22) { const ny = top + 7; ctx.fillStyle = '#efe6cc'; ctx.fillRect(-3, ny, 1, 1); ctx.fillRect(2, ny, 1, 1); ctx.fillStyle = '#b5482e'; ctx.fillRect(-1, ny + 1, 2, 1); }
+  if (!n.copper && !child && T && TK(T, 'schmuck') && (n.prestige > 22 || ((n.sex === 'f' || !n.partner) && n.id % 3 !== 0))) { const ny = top + 7; ctx.fillStyle = '#efe6cc'; ctx.fillRect(-3, ny, 1, 1); ctx.fillRect(2, ny, 1, 1); ctx.fillStyle = '#b5482e'; ctx.fillRect(-1, ny + 1, 2, 1); }
   if (T && a && (a.type === 'raid' || a.type === 'defend') && TK(T, 'heer') && !child) { ctx.fillStyle = '#c8783a'; ctx.fillRect(-4, top - 1, 8, 3); ctx.fillStyle = '#e8a060'; ctx.fillRect(-3, top - 1, 6, 1); ctx.fillStyle = '#8a6440'; ctx.beginPath(); ctx.arc(n.face === 'side' && n.flip ? 5 : -5, top + 9, 3.2, 0, 7); ctx.fill(); ctx.fillStyle = '#c8783a'; ctx.fillRect((n.face === 'side' && n.flip ? 5 : -5) - 1, top + 8, 2, 2); }
   if (n.copper && !child) { const ny = top + 7; ctx.fillStyle = '#d0803e'; ctx.fillRect(-3, ny, 1, 1); ctx.fillRect(-1, ny + 1, 2, 1); ctx.fillRect(2, ny, 1, 1); ctx.fillStyle = '#f0b070'; ctx.fillRect(0, ny + 1, 1, 1); }
   if (T && T.leader === n.id && T.gov === 'koenig') { ctx.fillStyle = '#e0b03c'; ctx.fillRect(-3, top - 2, 6, 2); ctx.fillRect(-3, top - 4, 1, 2); ctx.fillRect(0, top - 4, 1, 2); ctx.fillRect(2, top - 4, 1, 2); ctx.fillStyle = '#b5482e'; ctx.fillRect(-1, top - 2, 1, 1); }
@@ -713,6 +729,8 @@ function drawNpc(n, px, py, selected, detail) {
   if (carry > 0 && detail) { const bx = n.face === 'up' ? 0 : -dir * 4, by = n.face === 'up' ? -6 : -4; ctx.fillStyle = n.tools.korb > 0 ? '#b8935a' : '#7a5a34'; ctx.fillRect(bx - 2.5, by, 5, 4); if (n.inv.meat) { ctx.fillStyle = '#a3311f'; ctx.fillRect(bx - 1.5, by, 3, 2); } else { ctx.fillStyle = '#c23b4a'; ctx.fillRect(bx - 1.5, by, 1, 1); ctx.fillRect(bx + 0.5, by + 1, 1, 1); } }
   if (n.inv.wood > 0 && detail) { ctx.fillStyle = '#6b4a2b'; ctx.fillRect(-5, -5, 10, 1.5); ctx.fillRect(-4, -3.5, 8, 1.5); }
   if (n.carryFire) drawFlame(dir * 6, -8, 0.35);
+  if (a && a.loot > 0 && detail) { ctx.fillStyle = '#8a6a44'; ctx.beginPath(); ctx.ellipse(-dir * 4, -6, 4, 3.5, 0, 0, 7); ctx.fill(); ctx.fillStyle = '#6a4a2a'; ctx.fillRect(-dir * 4 - 1, -10, 2, 2); }
+  if (a && a.type === 'bury' && a.stage === 1 && detail) { const c = (W.corpses || []).find(c => c.id === a.corpse); if (c) { ctx.save(); ctx.translate(0, -12); ctx.scale(0.85, 0.85); drawCorpse(c, 0, 0, true); ctx.restore(); } }
   // Status-Symbol
   if (detail && a) {
     let sym = null;
@@ -905,6 +923,12 @@ function actText(n) {
   if (a.type === 'diplo') { const O = TRIBE.get(a.target); if (O) t = (a.stage === 1 ? 'verhandelt mit den ' : 'reist als Gesandter zu den ') + O.name + ' (' + ({ nahrung: 'bittet um Nahrung', zugang: 'bittet um Zugang zum Land', frieden: 'bittet um Frieden', buendnis: 'bietet ein Bündnis an' }[a.kind] || '') + ')'; }
   if (a.type === 'experiment' && a.stage === 1) t = 'tüftelt herum und probiert Dinge aus';
   if (a.type === 'raid') { const R = W.raids.find(r => r.id === a.raid); const E = R && TRIBE.get(R.to); if (E) t = 'zieht gegen die ' + E.name + ' in den Kampf'; }
+  if ((a.type === 'raid' || a.type === 'defend') && a.foe) { const f = NPC.get(a.foe); if (f) t = 'kämpft mit ' + f.name + (typeof weaponOf === 'function' ? ' – mit ' + WEAPONS[n.tools.bogen > 0 && dist(n.x, n.y, f.x, f.y) > 2.2 ? 'bogen' : weaponOf(n)].name : ''); }
+  if (a.type === 'return' && a.loot) t = 'schleppt Beute heim';
+  if (a.type === 'bury') { const c = (W.corpses || []).find(c => c.id === a.corpse); t = !c ? t : a.stage === 0 ? 'geht zum Leichnam von ' + c.name : a.stage === 1 ? (a.slot ? 'trägt ' + c.name + ' zum Totenacker' : 'trägt ' + c.name + ' aus dem Lager') : 'hebt ein Grab für ' + c.name + ' aus'; }
+  if (a.type === 'build') { if (a.stage === 1) t = 'fällt einen Baum für den Hausbau'; else if (a.stage === 4 || a.stage === 5) t = 'bricht Steine für den Hausbau'; else if (a.stage === 6) t = 'richtet ein Haus ein'; else if (a.stage === 3 && a.step !== undefined) t = HUT_STEP_TXT[a.step] || t; }
+  if (a.type === 'wood' && a.wk) t = 'fällt einen Baum';
+  if (a.type === 'craft' && a.stage === 1 && a.wk) t = a.mat === 'stone' ? 'schlägt Stein aus dem Fels' : a.mat === 'wood' ? 'schlägt Holz' : t;
   return t;
 }
 function bindVals(box, n) {
@@ -1109,6 +1133,7 @@ function adoptW(lite) {
   // Blickrichtung & Zwischenpositionen der bisherigen Figuren übernehmen
   for (const n of W.npcs) { const p = prev.get(n.id); if (p) { n.face = p.face; n.flip = p.flip; n.px = p.px; n.py = p.py; n.x = p.x; n.y = p.y; } }
   AMAP = new Map(); for (const a of W.animals) AMAP.set(a.id, a);
+  updateChops(); combatFx();
 }
 function onSim(e) {
   const m = e.data;
@@ -1123,7 +1148,7 @@ function onSim(e) {
   } else if (m.type === 'state') {
     adoptW(m.W);
     if (m.bf) for (let i = 0; i < m.bf.length && i < BUSHES.length; i++) { if (m.bf[i] === 255) { BUSHES[i].gone = 1; BUSHES[i].f = 0; } else BUSHES[i].f = m.bf[i]; }
-    for (const [i, t, cut, path, fl] of m.tiles) { T_ARR[i] = t; FLINT[i] = fl; HOOKS.onTile(i % C.MW, (i / C.MW) | 0); }
+    for (const [i, t, cut, path, fl] of m.tiles) { if (T_ARR[i] === T_FOREST && t !== T_FOREST && FALLS.length < 60) FALLS.push({ x: i % C.MW, y: (i / C.MW) | 0, t0: performance.now(), dir: hash(i % 97, i % 89) < 0.5 ? -1 : 1 }); T_ARR[i] = t; FLINT[i] = fl; HOOKS.onTile(i % C.MW, (i / C.MW) | 0); }
     if (m.own) { OWN_M = m.own; OWN = m.own; buildTerritory(); }
     for (const ev of m.chron) { CHRON.push(ev); HOOKS.onChronicle(ev); }
     if (CHRON.length > 4000) CHRON.splice(0, 500);
@@ -1226,4 +1251,123 @@ function refreshTree() {
     <div class="sec"><div class="t">Führt zu</div>${next.length ? next.map(link).join(' ') : '<span class="small">– Ende dieses Pfads (vorerst)</span>'}</div>
     <div class="sec"><div class="t">Stand</div>${s.holders ? `${s.holders} Menschen in ${tribes.length} Sippe${tribes.length === 1 ? '' : 'n'}: ${tribes.slice(0, 6).map(t => esc(t.name)).join(', ')}${tribes.length > 6 ? ' …' : ''}` : s.st === 'lost' ? '<b style="color:#d9644a">Wieder vergessen – alle Wissenden sind tot.</b>' : s.st === 'near' ? `Noch unentdeckt. Am weitesten: ${Math.round(s.best * 100)} %` : 'Noch fern – erst muss das Vorwissen her.'}${D ? `<div class="small">Zuerst: ${esc(D.byName)}, ${dateStr(D.t)}</div>` : ''}</div>`;
   td.querySelectorAll('[data-go]').forEach(e => e.onclick = () => { TREE.sel = e.dataset.go; refreshTree(); const p = L.pos[TREE.sel], tw = $('tw'); tw.scrollTo({ left: Math.max(0, p.x - tw.clientWidth / 2 + 80), top: Math.max(0, p.y - tw.clientHeight / 2), behavior: 'smooth' }); });
+}
+
+// =====================================================================
+//  Kampf, Arbeit und Tod sichtbar machen
+// =====================================================================
+// Bäume, an denen gerade gehauen wird, und Felsen, an denen geklopft wird
+let CHOPS = new Map(), FALLS = [], PARTS = [];
+function updateChops() {
+  if (!W || !W.npcs) return;
+  const nm = new Map(); for (const n of W.npcs) { const a = n.act; if (a && a.chop && a.wk) nm.set(a.chop, n.id); }
+  const keys = new Set([...CHOPS.keys(), ...nm.keys()]);
+  for (const k of keys) if (CHOPS.has(k) !== nm.has(k)) { const x = k % C.MW, y = (k / C.MW) | 0; for (const [dx, dy] of [[0, 0], [3, 0], [-3, 0], [0, 4], [0, -1]]) canopyCache.delete(Math.floor((x + dx) / CH) + ',' + Math.floor((y + dy) / CH)); }
+  CHOPS = nm;
+}
+function treeKind(x, y) { const h = hash(x + 101, y + 7), h2 = hash(x + 3, y + 211); let kind = h < 0.55 ? 'treeRound' : 'pine'; if (h2 < 0.035 && W.t[y * C.MW + x - 1] === T_FOREST && W.t[y * C.MW + x + 1] === T_FOREST && W.t[(y - 1) * C.MW + x] === T_FOREST) kind = 'treeBig'; return { kind, ax: (x + 0.5) * TS + (h2 - 0.5) * 7, ay: (y + 1) * TS - 1 + (h - 0.5) * 4 }; }
+function drawWorkFx(x0, y0, x1, y1) {
+  const now = performance.now();
+  for (const [k, id] of CHOPS) {
+    const x = k % C.MW, y = (k / C.MW) | 0; if (x < x0 - 2 || x > x1 + 2 || y < y0 - 2 || y > y1 + 4) continue;
+    if (W.t[k] === T_FOREST) { // der Baum wackelt bei jedem Schlag
+      const t = treeKind(x, y), s = ASSETS.spr[t.kind], ph = (FT * 5 + id * 0.37) % 1, hit = ph < 0.5 ? 0 : Math.sin((ph - 0.5) * 2 * Math.PI) * Math.exp(-(ph - 0.5) * 5);
+      ctx.save(); ctx.translate(t.ax, t.ay); ctx.rotate(hit * 0.09); spr(ctx, t.kind, -s[2] / 2, -s[3]); ctx.restore();
+      if (ph > 0.5 && ph < 0.56 && PARTS.length < 300) for (let i = 0; i < 2; i++) PARTS.push({ x: t.ax - 4 + Math.random() * 3, y: t.ay - 5, vx: (Math.random() - 0.5) * 30, vy: -20 - Math.random() * 20, t0: now, life: 500, c: '#c8a070', s: 1.5 });
+    } else { // Steinsplitter
+      const ph = (FT * 5 + id * 0.37) % 1; if (ph > 0.5 && ph < 0.56 && PARTS.length < 300) for (let i = 0; i < 3; i++) PARTS.push({ x: (x + 0.5) * TS + (Math.random() - 0.5) * 6, y: (y + 0.6) * TS, vx: (Math.random() - 0.5) * 40, vy: -25 - Math.random() * 25, t0: now, life: 450, c: Math.random() < 0.5 ? '#b0aca4' : '#7a7670', s: 1.5 });
+    }
+  }
+  // gefällte Bäume kippen um und bleiben kurz als Stamm liegen
+  for (let i = FALLS.length - 1; i >= 0; i--) {
+    const f = FALLS[i], age = now - f.t0; if (age > 4500) { FALLS.splice(i, 1); continue; }
+    if (f.x < x0 - 2 || f.x > x1 + 2 || f.y < y0 - 2 || f.y > y1 + 4) continue;
+    const t = treeKind(f.x, f.y), s = ASSETS.spr[t.kind] || ASSETS.spr.treeRound, k = Math.min(1, age / 900), ang = f.dir * (Math.PI / 2) * k * k;
+    ctx.save(); ctx.globalAlpha = age > 3500 ? 1 - (age - 3500) / 1000 : 1; ctx.translate(t.ax, t.ay); ctx.rotate(ang); spr(ctx, s === ASSETS.spr.treeRound ? 'treeRound' : t.kind, -s[2] / 2, -s[3]); ctx.restore();
+    if (age > 850 && age < 950 && !f.dust) { f.dust = 1; for (let j = 0; j < 8; j++) PARTS.push({ x: t.ax + f.dir * (8 + j * 2), y: t.ay, vx: (Math.random() - 0.5) * 30, vy: -10 - Math.random() * 15, t0: now, life: 700, c: 'rgba(160,140,110,.8)', s: 2 }); }
+  }
+}
+// Pfeile, Blut, Splitter
+function combatFx() {
+  if (!W || !W.npcs) return;
+  const now = performance.now();
+  for (const n of W.npcs) {
+    if (n.fx && n.fx.t !== n._fxSeen) { n._fxSeen = n.fx.t; if (n.fx.k === 'shoot' && PARTS.length < 300) PARTS.push({ arrow: 1, x: n.x * TS, y: n.y * TS - 8, x1: n.fx.x * TS, y1: n.fx.y * TS - 6, t0: now, life: 350, hit: n.fx.hit }); }
+    if (n.hitT && n.hitT !== n._hitSeen) { n._hitSeen = n.hitT; if (PARTS.length < 300) for (let i = 0; i < 6; i++) PARTS.push({ x: n.x * TS, y: n.y * TS - 6, vx: (n.hitDx || 1) * (15 + Math.random() * 30), vy: -15 - Math.random() * 25, t0: now, life: 550, c: '#a8201a', s: 1.5, blood: 1 }); }
+  }
+}
+function drawParticles() {
+  const now = performance.now();
+  for (let i = PARTS.length - 1; i >= 0; i--) {
+    const p = PARTS[i], age = now - p.t0; if (age > p.life) { PARTS.splice(i, 1); continue; }
+    if (p.arrow) { const k = age / p.life, x = p.x + (p.x1 - p.x) * k, y = p.y + (p.y1 - p.y) * k - Math.sin(k * Math.PI) * 10, a = Math.atan2(p.y1 - p.y - Math.cos(k * Math.PI) * 10 * Math.PI, p.x1 - p.x);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.fillStyle = '#6b4a2b'; ctx.fillRect(-5, -0.5, 8, 1); ctx.fillStyle = '#8d8a85'; ctx.fillRect(3, -1, 2, 2); ctx.fillStyle = '#efe6cc'; ctx.fillRect(-6, -1.5, 2, 1); ctx.fillRect(-6, 0.5, 2, 1); ctx.restore(); continue; }
+    const t = age / 1000, x = p.x + p.vx * t, y = p.y + p.vy * t + 60 * t * t;
+    ctx.globalAlpha = 1 - age / p.life; ctx.fillStyle = p.c; ctx.fillRect(x, y, p.s, p.s); ctx.globalAlpha = 1;
+  }
+}
+// ---------------------------------------------------------------- Tote und Gräber
+const CORPSE_SHEET = {};
+function drawCorpse(c, px, py, carried) {
+  ctx.save(); ctx.translate(px, py);
+  if (c.bones) { // nur noch Knochen
+    ctx.fillStyle = '#e8e2d0'; ctx.fillRect(-5, 0, 3, 3); ctx.fillStyle = '#2a201a'; ctx.fillRect(-4, 1, 1, 1); ctx.fillStyle = '#d8d0bc'; ctx.fillRect(-2, 1, 7, 1); ctx.fillRect(0, 0, 1, 3); ctx.fillRect(2, 0, 1, 3); ctx.fillRect(4, -1, 1, 1); ctx.fillRect(5, 2, 2, 1);
+    ctx.restore(); return;
+  }
+  if (!carried && c.war) { ctx.fillStyle = 'rgba(110,10,10,.5)'; ctx.beginPath(); ctx.ellipse(1, 3, 8, 3.5, 0, 0, 7); ctx.fill(); }
+  const key = c.look + (c.child ? 'c' : '') + c.cloth + (c.old ? 'o' : '');
+  const sheet = CORPSE_SHEET[key] || (CORPSE_SHEET[key] = spriteSheet(c.look, c.child, c.cloth, c.old, null));
+  if (c.dumped || (W.tick - c.t) / C.TPD > 8) ctx.filter = 'grayscale(.6) brightness(.85)';
+  ctx.drawImage(sheet, 0, 48, 16, 16, -8, -8, 16, 16);
+  ctx.filter = 'none';
+  ctx.restore();
+}
+function drawGrave(g) {
+  const px = g.x * TS, py = g.y * TS, days = (W.tick - g.t) / C.TPD, T = TRIBE.get(g.tribe);
+  // Grabhügel: frisch aus Erde, später überwachsen
+  ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.fillRect(px - 5, py + 3, 12, 3);
+  ctx.fillStyle = days < 40 ? '#7a5a3a' : '#5d8a3a'; ctx.fillRect(px - 5, py - 2, 10, 7); ctx.fillStyle = days < 40 ? '#94704a' : '#6fa045'; ctx.fillRect(px - 4, py - 2, 8, 2);
+  // Grabstein: ein aufrechter Stein, für Kinder klein, für bedeutende Menschen groß
+  const h = g.child ? 5 : g.notable ? 11 : 8, w = g.notable ? 6 : 4;
+  ctx.fillStyle = '#5e5a55'; ctx.fillRect(px - w / 2, py - 2 - h, w, h); ctx.fillStyle = '#9a958d'; ctx.fillRect(px - w / 2, py - 2 - h, w - 1, h - 1); ctx.fillStyle = '#b8b3aa'; ctx.fillRect(px - w / 2, py - 2 - h, w - 1, 1);
+  if (T && TK(T, 'schrift')) { ctx.fillStyle = '#5e5a55'; ctx.fillRect(px - 1, py - h, 2, 1); ctx.fillRect(px - 1, py - h + 2, 2, 1); }
+  else if (g.war) { ctx.fillStyle = '#6b4a2b'; ctx.fillRect(px + 3, py - 9, 1, 9); ctx.fillStyle = '#8d8a85'; ctx.fillRect(px + 2, py - 11, 3, 2); } // Speer des Kriegers
+  if (days < 25) { ctx.fillStyle = '#e8c840'; ctx.fillRect(px - 3, py + 1, 1, 1); ctx.fillStyle = '#c84a6a'; ctx.fillRect(px + 2, py, 1, 1); ctx.fillStyle = '#efe6cc'; ctx.fillRect(px, py + 2, 1, 1); } // Blumen
+}
+function drawCemLot(P, T) {
+  const X = P.x0 * TS, Y = P.y0 * TS, Wd = P.w * TS, Hd = P.h * TS;
+  ctx.fillStyle = 'rgba(40,70,30,.25)'; ctx.fillRect(X, Y, Wd, Hd);
+  // niedrige Einfassung aus Feldsteinen, Eingang unten
+  for (let x = 0; x < Wd; x += 5) for (const y of [0, Hd - 3]) { if (y && Math.abs(x - 2.5 * TS) < 8) continue; ctx.fillStyle = '#7e7a74'; ctx.fillRect(X + x, Y + y, 4, 3); ctx.fillStyle = '#a8a39b'; ctx.fillRect(X + x, Y + y, 3, 1); }
+  for (let y = 0; y < Hd; y += 5) for (const x of [0, Wd - 4]) { ctx.fillStyle = '#7e7a74'; ctx.fillRect(X + x, Y + y, 4, 3); ctx.fillStyle = '#a8a39b'; ctx.fillRect(X + x, Y + y, 3, 1); }
+}
+// ---------------------------------------------------------------- Holzstapel und Steinhaufen
+function drawStockPiles(T) {
+  const [wx, wy] = stockSpot(T, 'wood'), [sx, sy] = stockSpot(T, 'stone');
+  const nw = Math.min(15, Math.ceil(T.store.wood / 3) + (T.fire.lit ? 2 : 0));
+  for (let i = 0; i < nw; i++) { const row = i < 6 ? 0 : i < 11 ? 1 : i < 14 ? 2 : 3, k = row === 0 ? i : row === 1 ? i - 6 : row === 2 ? i - 11 : 0; tex(ctx, 'logEnd', wx * TS - 16 + k * 6 + row * 3, wy * TS - row * 5, 6, 6); }
+  const ns = Math.min(12, Math.ceil(T.store.stone / 3));
+  for (let i = 0; i < ns; i++) { const a = i * 2.4, r = 2 + (i % 4) * 2.2, x = sx * TS + Math.cos(a) * r, y = sy * TS + Math.sin(a) * r * 0.6 - (i > 8 ? 3 : 0); ctx.fillStyle = '#6e6a64'; ctx.fillRect(x - 2, y - 1, 5, 4); ctx.fillStyle = '#a8a39b'; ctx.fillRect(x - 2, y - 1, 4, 1); }
+}
+// ---------------------------------------------------------------- Baustelle: Pflöcke, Boden, Wände, Dach
+function drawSite(P, T) {
+  const X = P.x0 * TS, Y = P.y0 * TS, Wd = P.w * TS, Hd = P.h * TS, pr = P.prog || 0, door = X + 2 * TS;
+  const st = P.mud ? 'mud' : P.stone ? 'stone' : 'hut';
+  // Pflöcke und Schnur
+  ctx.fillStyle = '#5a3d22'; for (const [x, y] of [[X, Y], [X + Wd - 2, Y], [X, Y + Hd - 2], [X + Wd - 2, Y + Hd - 2]]) ctx.fillRect(x, y - 3, 2, 5);
+  if (pr < 4) { ctx.strokeStyle = 'rgba(232,224,200,.7)'; ctx.lineWidth = 0.5; ctx.strokeRect(X + 1, Y + 1, Wd - 2, Hd - 2); }
+  // Boden: erst die halbe, dann die ganze Fläche
+  if (pr >= 2) { const fh = pr >= 3 ? Hd : Hd / 2; ctx.fillStyle = st === 'stone' ? patt(ctx, 'stoneFloor') : st === 'mud' ? '#b4906a' : patt(ctx, 'dirtFloor'); ctx.fillRect(X, Y + Hd - fh, Wd, fh); }
+  const face = (x, y, w, h) => { if (st === 'mud') brick(x, y, w, h, '#b8925c', '#9c7a4a'); else { ctx.fillStyle = patt(ctx, st === 'stone' ? 'cobble' : 'bark'); ctx.fillRect(x, y, w, h); } };
+  const side = st === 'mud' ? '#a8844f' : st === 'stone' ? '#6a6a72' : '#4a3020';
+  if (pr >= 4) face(X, Y, Wd, 9);                                   // Rückwand
+  if (pr >= 5) { ctx.fillStyle = side; ctx.fillRect(X, Y - 3, 3, Hd + 3); }       // links
+  if (pr >= 6) { ctx.fillStyle = side; ctx.fillRect(X + Wd - 3, Y - 3, 3, Hd + 3); } // rechts
+  if (pr >= 7) { ctx.fillStyle = side; ctx.fillRect(X, Y + Hd - 3, door - X, 4); ctx.fillRect(door + TS, Y + Hd - 3, X + Wd - door - TS, 4); } // vorne, mit Türlücke
+  // Dach: Sparren, dann Deckung
+  if (pr >= 8) { ctx.strokeStyle = '#6a4424'; ctx.lineWidth = 1.5; for (let i = 4; i < Wd; i += 8) { ctx.beginPath(); ctx.moveTo(X + i, Y); ctx.lineTo(X + i, Y + Hd); ctx.stroke(); } }
+  if (pr >= 9) { const rh = Hd * 0.5; ctx.fillStyle = st === 'hut' ? patt(ctx, 'hay') : st === 'mud' ? '#d4b07a' : patt(ctx, 'cobble'); ctx.fillRect(X - 1, Y - 1, Wd + 2, rh); ctx.fillStyle = 'rgba(0,0,0,.2)'; ctx.fillRect(X - 1, Y + rh - 2, Wd + 2, 2); }
+  // Baumaterial liegt bereit
+  for (let i = 0; i < Math.max(0, 3 - Math.floor(pr / 4)); i++) tex(ctx, 'logEnd', X + Wd + 1, Y + 6 + i * 7, 6, 6);
+  if (st === 'stone' && pr < 7) for (let i = 0; i < 3; i++) { ctx.fillStyle = '#7e7a74'; ctx.fillRect(X - 7, Y + 8 + i * 6, 5, 4); ctx.fillStyle = '#a8a39b'; ctx.fillRect(X - 7, Y + 8 + i * 6, 4, 1); }
 }

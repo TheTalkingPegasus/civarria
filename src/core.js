@@ -350,7 +350,7 @@ function flowFor(T) {
   let F = FLOW.get(T.id);
   const raft = !!T.raft;
   if (W.hutVer) wallAt(0, 0);
-  if (F && F.cx === T.cx && F.cy === T.cy && F.raft === raft && F.wv === WMAPV && (F.pv === W.pathVer || W.tick - F.t < C.TPY)) return F;
+  if (F && F.cx === T.cx && F.cy === T.cy && F.raft === raft && F.wv === wallSig(T) && (F.pv === W.pathVer || W.tick - F.t < C.TPY)) return F;
   // Nur ein Fenster um das Lager: große Welten bleiben bezahlbar
   const RW = FLOW_R, x0 = Math.max(0, (T.cx | 0) - RW), y0 = Math.max(0, (T.cy | 0) - RW), MW = Math.min(C.MW, (T.cx | 0) + RW + 1) - x0, MH = Math.min(C.MH, (T.cy | 0) + RW + 1) - y0, N = MW * MH, d = new Int32Array(N).fill(1e9);
   const G = (lx, ly) => (ly + y0) * C.MW + lx + x0;
@@ -373,7 +373,7 @@ function flowFor(T) {
       const nd = d[i] + c; if (nd < d[j] && hn < N * 4 - 1) { d[j] = nd; push(j, nd); }
     }
   }
-  F = { cx: T.cx, cy: T.cy, d, raft, wv: WMAPV, t: W.tick, pv: W.pathVer, hv: W.hutVer || 0, x0, y0, w: MW, h: MH, at: flowAt }; FLOW.set(T.id, F); return F;
+  F = { cx: T.cx, cy: T.cy, d, raft, wv: wallSig(T), t: W.tick, pv: W.pathVer, hv: W.hutVer || 0, x0, y0, w: MW, h: MH, at: flowAt }; FLOW.set(T.id, F); return F;
 }
 function moveVia(n, O, tx, ty, speed) { return moveHome(n, O, tx, ty, speed); }
 function reachable(T, x, y) { const F = flowFor(T); if (dist(x, y, T.cx, T.cy) > FLOW_R - 2) return true; return F.at((y | 0) * C.MW + (x | 0)) < 1e9; }

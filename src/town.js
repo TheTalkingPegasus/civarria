@@ -81,8 +81,10 @@ function houseOK(e, x, y) {
 }
 // Wo liegt welches Haus? (für Tür-Wege und Wärme)
 let HMAP = null, HMAPV = -1, HLIST = [];
+let HVT = -1, HVK = 0;
 function houseAt(x, y) {
-  const hv = (W.hutVer || 0) + W.tribes.reduce((a, T) => a + (T.alive && hallDone(T) ? T.id : 0), 0) * 1e6;
+  if (HVT !== W.tick) { HVT = W.tick; let s = 0; for (const T of W.tribes) if (T.alive && T.bld && T.bld.hall >= BUILD_NEED.hall) s += T.id; HVK = (W.hutVer || 0) + s * 1e6; }
+  const hv = HVK;
   if (HMAPV !== hv || !HMAP || HMAP.length !== C.MW * C.MH) {
     HMAPV = hv; if (!HMAP || HMAP.length !== C.MW * C.MH) HMAP = new Int32Array(C.MW * C.MH); else HMAP.fill(0); HLIST = [null];
     for (const T of W.tribes) if (T.alive) for (const h of (T.storehouse && T.storehouse.lx !== undefined ? [...T.huts, T.storehouse] : T.huts).concat(hallDone(T) ? [hallOf(T)].filter(Boolean) : [])) if (h.lx !== undefined) { const id = HLIST.length; HLIST.push(h); for (let yy = h.ly; yy < h.ly + h.h; yy++) for (let xx = h.lx; xx < h.lx + h.w; xx++) if (xx >= 0 && yy >= 0 && xx < C.MW && yy < C.MH) HMAP[yy * C.MW + xx] = id; }
@@ -96,9 +98,15 @@ function houseAt(x, y) {
 let WMAP = null, WMAPV = '';
 let WMAPT = -1;
 function wallAt(x, y) {
-  if (WMAPT !== W.tick) { WMAPT = W.tick; const v = (W.hutVer || 0) + ':' + W.tribes.reduce((a, T) => a + (T.alive && T.town ? (T.pal || 0) + (T.bld?.wall || 0) * 100 + (T.townVer || 0) * 7 : 0), 0);
+  if (WMAPT !== W.tick) { WMAPT = W.tick; const v = W.tribes.reduce((a, T) => a + (T.alive && T.town && ((T.pal || 0) > 0 || (T.bld?.wall || 0) > 0) ? ((T.pal || 0) + (T.bld?.wall || 0) * 100 + (T.townVer || 0) * 7) * (T.id % 97 + 1) : 0), 0) + ':' + (W.ghostVer || 0);
   if (v !== WMAPV) { WMAPV = v; WMAP = new Set(); for (const T of W.tribes) { if (!T.alive || !T.town) continue; const isW = (T.bld?.wall || 0) > 0, prog = isW ? T.bld.wall / BUILD_NEED.wall : (T.pal || 0) / 24; if (prog <= 0) continue; const per = townWall(T).tiles, n = Math.round(per.length * Math.min(1, prog)); for (let k = 0; k < n; k++) WMAP.add(per[k][1] * C.MW + per[k][0]); } } }
   return WMAP.has((y | 0) * C.MW + (x | 0));
+}
+// Mauern in der Umgebung einer Sippe – nur deren Änderung macht ihren Wegeplan ungültig
+function wallSig(T) {
+  if (T._wsT === W.tick) return T._ws; let s = 0;
+  for (const O of W.tribes) if (O.alive && O.town && ((O.pal || 0) > 0 || (O.bld?.wall || 0) > 0) && Math.abs(O.cx - T.cx) < FLOW_R + 40 && Math.abs(O.cy - T.cy) < FLOW_R + 40) s += ((O.pal || 0) + (O.bld?.wall || 0) * 100 + (O.townVer || 0) * 7) * (O.id % 97 + 1);
+  T._wsT = W.tick; T._ws = s; return s;
 }
 // darf man von Kachel (ax,ay) nach (bx,by)?
 function stepOK(e, ax, ay, bx, by) {

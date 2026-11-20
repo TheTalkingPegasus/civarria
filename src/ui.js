@@ -2,7 +2,9 @@
 //  CIVARRIA · Darstellung & Bedienung
 // =====================================================================
 const TS = 16; // Pixel pro Kachel
-const cv = document.getElementById('view'), ctx = cv.getContext('2d');
+const cv = document.getElementById('view'), ctxScreen = cv.getContext('2d');
+let ctx = ctxScreen; // zeigt beim Zeichnen der Welt auf die Pixelleinwand
+const PIX = document.createElement('canvas'), pctx = PIX.getContext('2d'); let PIXON = false, PIXO = [0, 0, 0, 0];
 const mini = document.getElementById('mini'), mctx = mini.getContext('2d');
 const $ = id => document.getElementById(id);
 let DPR = 1, VW = 0, VH = 0;
@@ -290,8 +292,20 @@ function draw(t) {
   ctx.fillStyle = '#0d1418'; ctx.fillRect(0, 0, VW, VH);
   const [x0, y0] = s2w(0, 0), [x1, y1] = s2w(VW, VH);
   const inView = (x, y, m = 2) => x > x0 - m && x < x1 + m && y > y0 - m && y < y1 + m;
-  ctx.save();
-  ctx.translate(VW / 2, VH / 2); ctx.scale(cam.z, cam.z); ctx.translate(-cam.x, -cam.y);
+  // Ab Zoom 1 wird die Welt in echter Pixelauflösung gezeichnet und dann ohne Weichzeichnen vergrößert:
+  // so liegt alles – Figuren, Feuer, Schatten, Licht – im selben Pixelraster.
+  PIXON = cam.z >= 1.5 && ui.pixel !== false; // darunter sind die Pixel ohnehin kleiner als ein Bildschirmpunkt
+  if (PIXON) {
+    const left = cam.x - VW / 2 / cam.z, top = cam.y - VH / 2 / cam.z, ox = Math.floor(left), oy = Math.floor(top);
+    const pw = Math.ceil(VW / cam.z) + 2, ph = Math.ceil(VH / cam.z) + 2;
+    if (PIX.width !== pw || PIX.height !== ph) { PIX.width = pw; PIX.height = ph; }
+    PIXO = [ox, oy, left, top];
+    ctx = pctx; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false; ctx.fillStyle = '#0d1418'; ctx.fillRect(0, 0, pw, ph);
+    ctx.save(); ctx.translate(-ox, -oy);
+  } else {
+    ctx.save();
+    ctx.translate(VW / 2, VH / 2); ctx.scale(cam.z, cam.z); ctx.translate(-cam.x, -cam.y);
+  }
   drawTerrain(x0, y0, x1, y1);
   // Jahreszeit
   const season = seasonNow();
@@ -354,7 +368,7 @@ function draw(t) {
     // Feuer
     ctx.fillStyle = '#3a3633'; ctx.beginPath(); ctx.arc(px, py, 7, 0, 7); ctx.fill();
     for (let i = 0; i < 8; i++) { ctx.fillStyle = '#6f6a63'; ctx.beginPath(); ctx.arc(px + Math.cos(i * 0.785) * 7, py + Math.sin(i * 0.785) * 7, 1.8, 0, 7); ctx.fill(); }
-    if (T.fire.lit) { if (T.fire.fuel > 0) drawFlame(px, py, 1 + Math.min(1, T.fire.fuel / 60) * 0.4); else { ctx.fillStyle = '#b8401c'; ctx.beginPath(); ctx.arc(px, py, 3 + Math.sin(FT * 3) * 0.6, 0, 7); ctx.fill(); } }
+    if (T.fire.lit) { if (T.fire.fuel > 0) drawFlame(px, py, 1 + Math.min(1, T.fire.fuel / 60) * 0.4); else { ctx.fillStyle = '#b8401c'; ctx.fillRect(Math.round(px) - 3, Math.round(py) - 1, 6, 3); ctx.fillStyle = '#e8541e'; if (Math.floor(FT * 3) % 2) ctx.fillRect(Math.round(px) - 1, Math.round(py) - 1, 2, 1); } }
   }
   // Blitzfeuer
   for (const f of W.fires) { if (!inView(f.x, f.y)) continue; for (let i = 0; i < 3; i++) drawFlame(f.x * TS + (i - 1) * 7, f.y * TS + (i % 2) * 4, 1.3); }
@@ -373,21 +387,21 @@ function draw(t) {
   // Ausgewählte Figur bleibt durch die Krone hindurch erkennbar
   if (sel && cam.z >= 0.42) { const [x, y] = lerpPos(sel); if (W.t[(y | 0) * C.MW + (x | 0)] === T_FOREST || W.t[((y | 0) + 1) * C.MW + (x | 0)] === T_FOREST) { ctx.strokeStyle = '#ffd34a'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 2]); ctx.beginPath(); ctx.arc(x * TS, y * TS, 11, 0, 7); ctx.stroke(); ctx.setLineDash([]); } }
   ctx.restore();
-
-  // Nacht & Licht
+  // Nacht in Pixelauflösung: Lichtkreise in Stufen statt weicher Verläufe
   const { dark, dusk } = dayLight();
-  if (dusk > 0.01) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = `rgba(255,120,50,${0.13 * dusk})`; ctx.fillRect(0, 0, VW * DPR, VH * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); }
-  if (dark > 0.01) {
+  if (PIXON) {
+    if (dusk > 0.01) { pctx.fillStyle = `rgba(255,120,50,${0.13 * dusk})`; pctx.fillRect(0, 0, PIX.width, PIX.height); }
+    if (dark > 0.01) pixelNight(dark, dusk);
+    ctx = ctxScreen; ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(PIX, 0, 0, PIX.width, PIX.height, (PIXO[0] - PIXO[2]) * cam.z, (PIXO[1] - PIXO[3]) * cam.z, PIX.width * cam.z, PIX.height * cam.z);
+  }
+  if (!PIXON && dusk > 0.01) { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = `rgba(255,120,50,${0.13 * dusk})`; ctx.fillRect(0, 0, VW * DPR, VH * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); }
+  if (!PIXON && dark > 0.01) {
     nctx.setTransform(1, 0, 0, 1, 0, 0); nctx.globalCompositeOperation = 'source-over'; nctx.clearRect(0, 0, nightC.width, nightC.height);
     nctx.fillStyle = `rgba(${8 + Math.round(30 * dusk)},${14 + Math.round(6 * dusk)},${35 + Math.round(20 * dusk)},${0.74 * dark})`; nctx.fillRect(0, 0, nightC.width, nightC.height);
     nctx.globalCompositeOperation = 'destination-out';
-    const lights = [];
-    for (const T of W.tribes) if (T.alive && T.fire.lit) lights.push([T.cx, T.cy, 110]);
-    for (const f of W.fires) lights.push([f.x, f.y, 90]);
-    for (const n of W.npcs) if (n.carryFire) lights.push([n.x, n.y, 40]); else if (n._torch) { const [x, y] = lerpPos(n); lights.push([x, y, 34]); }
-    for (const T of W.tribes) if (T.alive && T.town && TK(T, 'fackeln')) for (const p of townTorches(T)) lights.push([p[0], p[1] - 0.6, 30]);
-    for (const T of W.tribes) if (T.alive && hallDone(T)) { const H = hallOf(T); if (H) lights.push([H.x, H.y, 36]); }
-    for (const T of W.tribes) if (T.alive) for (const h of T.huts) if (h.lx !== undefined && (h.lx + h.ly) % 3 === 0) lights.push([h.x, h.y, 13]);
+    const lights = lightList();
+    if (0) for (const T of W.tribes) if (T.alive && T.fire.lit) lights.push([T.cx, T.cy, 110]);
     for (const [lx, ly, r0] of lights) {
       const [sx, sy] = w2s(lx, ly); const r = r0 * cam.z * DPR * (0.95 + Math.sin(FT * 9 + lx) * 0.04);
       const gr = nctx.createRadialGradient(sx * DPR, sy * DPR, 0, sx * DPR, sy * DPR, r);
@@ -417,12 +431,20 @@ function draw(t) {
   drawMini();
 }
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+// Pixel-Feuer: vier Bilder einer kleinen Flamme, im Takt flackernd; Größe in ganzen Pixelstufen
+const FLAME_PX = [
+  ['....a.....', '...aba....', '...abba...', '..abcba...', '..abccba..', '.abccdcba.', '.abcddcba.', 'abcdddcba.', 'abccddcbaa', '.abbccbba.', '..aabbaa..'],
+  ['.....a....', '....aba...', '...abba...', '...abcba..', '..abccba..', '.abcdccba.', '.abcddcba.', '.abcdddcba', 'aabcddccba', '.abbccbba.', '..aabbaa..'],
+  ['...a......', '...ab.....', '..abba....', '..abcba...', '.abccba...', '.abcdcbaa.', 'abcddccba.', 'abcdddcba.', 'abccddcba.', '.abbccbba.', '..aabbaa..'],
+  ['....aa....', '...abba...', '...abca...', '..abccba..', '..abcdcba.', '.abcddcba.', '.abcdddcba', 'abcdddccba', 'abccddcbaa', '.abbccbba.', '..aabbaa..'],
+];
+const FLAME_PAL = { a: '#b8401c', b: '#e8541e', c: '#ffb02e', d: '#fff1a8' };
+const FLAME_CV = [];
+function flameCanvas(f) { if (FLAME_CV[f]) return FLAME_CV[f]; const rows = FLAME_PX[f], c = document.createElement('canvas'); c.width = 10; c.height = rows.length; const g = c.getContext('2d'); rows.forEach((r, y) => { for (let x = 0; x < r.length; x++) if (FLAME_PAL[r[x]]) { g.fillStyle = FLAME_PAL[r[x]]; g.fillRect(x, y, 1, 1); } }); return FLAME_CV[f] = c; }
 function drawFlame(px, py, s) {
-  const f = Math.sin(FT * 13 + px) * 0.15 + Math.sin(FT * 7.3 + py) * 0.1;
-  ctx.fillStyle = 'rgba(255,120,30,.25)'; ctx.beginPath(); ctx.arc(px, py, 10 * s, 0, 7); ctx.fill();
-  ctx.fillStyle = '#e8541e'; ctx.beginPath(); ctx.arc(px, py, 5.5 * s * (1 + f), 0, 7); ctx.fill();
-  ctx.fillStyle = '#ffb02e'; ctx.beginPath(); ctx.arc(px + f * 2, py - 0.5, 3.4 * s * (1 - f), 0, 7); ctx.fill();
-  ctx.fillStyle = '#fff1a8'; ctx.beginPath(); ctx.arc(px, py, 1.6 * s, 0, 7); ctx.fill();
+  const f = (Math.floor(FT * 9 + px * 0.37 + py * 0.11) % 4 + 4) % 4, k = Math.max(1, Math.round(s * 2)) / 2; // halbe Stufen: 0.5, 1, 1.5 …
+  const c = flameCanvas(f), w = Math.round(10 * k), h = Math.round(c.height * k);
+  ctx.drawImage(c, Math.round(px - w / 2), Math.round(py + 2 * k - h), w, h);
 }
 // ---------------------------------------------------------------- Bauten der Jungstein- und Kupferzeit (Pixelkunst)
 function brick(x, y, w, h, light, dark) {
@@ -1638,3 +1660,40 @@ const PERF = {
     for (let i = 0; i < n; i++) { const v = T[i]; g.fillStyle = v <= 20 ? '#4caf6a' : v <= 34 ? '#d8b040' : '#e05a4a'; g.fillRect(Wd - (n - i) * w, y(v), Math.max(1, w - 0.2), H - y(v)); }
   },
 };
+
+// ---------------------------------------------------------------- Licht und Nacht im Pixelraster
+function lightList() {
+  const L = [];
+  for (const T of W.tribes) if (T.alive && T.fire.lit) L.push([T.cx, T.cy, 110]);
+  for (const f of W.fires) L.push([f.x, f.y, 90]);
+  for (const n of W.npcs) if (n.carryFire) L.push([n.x, n.y, 40]); else if (n._torch) { const [x, y] = lerpPos(n); L.push([x, y, 34]); }
+  for (const T of W.tribes) if (T.alive && T.town && TK(T, 'fackeln')) for (const p of townTorches(T)) L.push([p[0], p[1] - 0.6, 30]);
+  for (const T of W.tribes) if (T.alive && hallDone(T)) { const H = hallOf(T); if (H) L.push([H.x, H.y, 36]); }
+  for (const T of W.tribes) if (T.alive) for (const h of T.huts) if (h.lx !== undefined && (h.lx + h.ly) % 3 === 0) L.push([h.x, h.y, 13]);
+  return L;
+}
+const NP = document.createElement('canvas'), npc2 = NP.getContext('2d');
+function pixelNight(dark, dusk) {
+  if (NP.width !== PIX.width || NP.height !== PIX.height) { NP.width = PIX.width; NP.height = PIX.height; }
+  const g = npc2, ox = PIXO[0], oy = PIXO[1], Wd = NP.width, Hd = NP.height;
+  g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, Wd, Hd);
+  g.fillStyle = `rgba(${8 + Math.round(30 * dusk)},${14 + Math.round(6 * dusk)},${35 + Math.round(20 * dusk)},${0.74 * dark})`; g.fillRect(0, 0, Wd, Hd);
+  g.globalCompositeOperation = 'destination-out';
+  const L = lightList().filter(([x, y, r]) => x * TS - ox > -r && x * TS - ox < Wd + r && y * TS - oy > -r && y * TS - oy < Hd + r);
+  // drei harte Lichtstufen statt eines weichen Verlaufs – das klassische Pixel-Licht
+  for (const [lx, ly, r0] of L) {
+    const r = Math.round(r0 * (0.97 + (Math.floor(FT * 6 + lx) % 2) * 0.03)), c = lightStamp(r);
+    g.drawImage(c, Math.round(lx * TS - ox) - r, Math.round(ly * TS - oy) - r);
+  }
+  pctx.drawImage(NP, 0, 0);
+  // warmer Schein, ebenfalls in Stufen
+  pctx.globalCompositeOperation = 'lighter';
+  pctx.globalAlpha = dark; for (const [lx, ly, r0] of L) { const c = glowStamp(Math.round(r0 * 0.45)); pctx.drawImage(c, Math.round(lx * TS - ox) - c.width / 2, Math.round(ly * TS - oy) - c.height / 2); } pctx.globalAlpha = 1;
+  pctx.globalCompositeOperation = 'source-over';
+}
+// vorgefertigte Lichtstempel je Radius (drei harte Stufen)
+const LSTAMP = new Map(), GSTAMP = new Map();
+function lightStamp(r) { let c = LSTAMP.get(r); if (c) return c; c = document.createElement('canvas'); c.width = c.height = r * 2 + 1; const g = c.getContext('2d'); for (const [k, a] of [[1, 0.35], [0.72, 0.6], [0.45, 1]]) { g.fillStyle = `rgba(0,0,0,${a})`; pixelDisc(g, r, r, Math.round(r * k)); } LSTAMP.set(r, c); return c; }
+function glowStamp(r) { let c = GSTAMP.get(r); if (c) return c; c = document.createElement('canvas'); c.width = c.height = r * 2 + 1; const g = c.getContext('2d'); g.fillStyle = 'rgba(255,140,40,.10)'; pixelDisc(g, r, r, r); g.fillStyle = 'rgba(255,160,60,.10)'; pixelDisc(g, r, r, Math.round(r * 0.55)); GSTAMP.set(r, c); return c; }
+// gefüllter Kreis aus ganzen Pixeln (Zeile für Zeile), ohne Kantenglättung
+function pixelDisc(g, cx, cy, r) { if (r <= 0) return; for (let dy = -r; dy <= r; dy++) { const w = Math.floor(Math.sqrt(r * r - dy * dy)); g.fillRect(cx - w, cy + dy, w * 2 + 1, 1); } }

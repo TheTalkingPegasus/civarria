@@ -218,7 +218,7 @@ const TECH = {
   zaehmung:    { name: 'Tierzähmung', icon: '🐕', req: ['speer'], D: 10500, ctx: { wolfnear: 1, experiment: 0.3 }, desc: 'Wölfe gewöhnen sich an Menschen und werden zu Jagdgefährten.' },
   bogen:       { name: 'Pfeil & Bogen', icon: '🏹', req: ['speer', 'flechten'], D: 9000, ctx: { hunt: 0.8, experiment: 0.5 }, desc: 'Eine gespannte Sehne schleudert Pfeile weit und genau. Jagd und Kampf verändern sich.' },
   palisade:    { name: 'Palisaden', icon: '🪵', req: ['faustkeil', 'huette'], D: 7500, ctx: { raided: 3, build: 0.4, experiment: 0.3 }, desc: 'Angespitzte Pfähle im Kreis um das Lager. Schutz vor Räubern, Feinden und Wölfen.' },
-  viehzucht:   { name: 'Viehzucht', icon: '🐐', req: ['flechten', 'faustkeil'], D: 8500, ctx: { goatnear: 1, experiment: 0.3 }, desc: 'Wildziegen einfangen, einpferchen und vermehren. Milch und Fleisch ohne Jagd.' },
+  viehzucht:   { name: 'Viehzucht', icon: '🐐', req: ['flechten', 'faustkeil'], D: 6500, ctx: { goatnear: 1.5, experiment: 0.3 }, desc: 'Wildziegen einfangen, einpferchen und vermehren. Milch und Fleisch ohne Jagd.' },
   reusen:      { name: 'Fischreusen', icon: '🪤', req: ['fischen', 'flechten'], D: 5000, ctx: { water: 0.8, experiment: 0.4 }, desc: 'Geflochtene Fallen im seichten Wasser fangen Fische, während man schläft.' },
   weben:       { name: 'Weben', icon: '🧶', req: ['flechten', 'viehzucht'], D: 9000, ctx: { goatnear: 0.3, gather: 0.15, rest: 0.3, experiment: 0.6 }, desc: 'Ziegenhaar und Pflanzenfasern zu Fäden drehen und zu Stoff verweben. Leichte, warme Kleidung.' },
   floss:       { name: 'Floß', icon: '🛶', req: ['flechten', 'faustkeil'], D: 7000, ctx: { waterblock: 1, water: 0.3, experiment: 0.4 }, desc: 'Baumstämme zusammenbinden und über Flüsse und Seen setzen.' },
@@ -898,7 +898,7 @@ function startAct(n, o) {
 
 function stepNpc(n) {
   const T = tribeOf(n), a = n.act, age = ageY(n);
-  const speed = (age < 12 ? 0.7 : 1) * (n.injured > 0 ? 0.5 : 1) * (n.sick > 0 ? 0.7 : 1);
+  const speed = (age < 12 ? 0.7 : 1) * (n.injured > 0 ? 0.5 : 1) * (n.sick > 0 ? 0.7 : 1) * (riding(n, T) ? 1.7 : 1);
   // Bedürfnisse
   n.hunger = Math.min(100, n.hunger + (seasonNow() === 3 ? 0.72 : 0.9));
   if (!(a && a.type === 'sleep' && a.stage === 1)) n.energy = Math.max(0, n.energy - 1.35);
@@ -2348,7 +2348,7 @@ function dailyTick() {
     const deer = W.animals.filter(a => a.k === 'deer');
     const cap = 450; let born = 0;
     for (const d of deer) if (deer.length + born < cap && rnd() < 0.42) { W.animals.push({ id: W.nextId++, k: 'deer', x: d.x, y: d.y, tx: d.x, ty: d.y, born: W.tick }); born++; }
-    const horses = W.animals.filter(a => a.k === 'horse'); for (const h of horses) if (horses.length < 90 && rnd() < 0.2) W.animals.push({ id: W.nextId++, k: 'horse', x: h.x, y: h.y, tx: h.x, ty: h.y, born: W.tick });
+    const horses = W.animals.filter(a => a.k === 'horse' && !a.tribe); for (const h of horses) if (horses.length < 90 && rnd() < 0.2) W.animals.push({ id: W.nextId++, k: 'horse', x: h.x, y: h.y, tx: h.x, ty: h.y, born: W.tick });
     const AR = C.MW * C.MH / 108000;
     for (const K in HERD_K) { const all = W.animals.filter(a => a.k === K), cnt = {}; let wild = 0; for (const g of all) { if (g.tribe) cnt[g.tribe] = (cnt[g.tribe] || 0) + 1; else wild++; }
       const cap = (K === 'goat' ? 90 : 50) * AR, pb = { goat: 0.55, sheep: 0.55, cattle: 0.32, pig: 0.75, donkey: 0.3 }[K];
@@ -2897,7 +2897,10 @@ Object.assign(TECH.zaehmung, { cat: 'tiere' }); Object.assign(TECH.bogen, { cat:
 Object.assign(TECH.viehzucht, { cat: 'tiere' }); Object.assign(TECH.reusen, { cat: 'wasser' }); Object.assign(TECH.weben, { cat: 'handwerk' });
 Object.assign(TECH.floss, { cat: 'wasser' }); Object.assign(TECH.steinbau, { cat: 'bauen' }); Object.assign(TECH.ackerbau, { cat: 'nahrung' });
 
-const HERD_K = { goat: 'viehzucht', sheep: 'schaf', cattle: 'rind', pig: 'schwein', donkey: 'esel' };
+const HERD_K = { goat: 'viehzucht', sheep: 'schaf', cattle: 'rind', pig: 'schwein', donkey: 'esel', horse: 'pferd' };
+// Wer reitet? Kundschafter, Boten, Händler und Krieger – wenn die Sippe Pferde hat
+const RIDE_ACT = { explore: 1, diplo: 1, visit: 1, raid: 1, return: 1, steal: 1 };
+const riding = (n, T) => !!(n.act && RIDE_ACT[n.act.type] && TK(T, 'pferd') && T.tc && T.tc.herd && T.tc.herd.horse && ageY(n) >= 14);
 const tPop = (T, n) => T.members.length >= n;
 // Lage der Sippe – einmal am Tag zwischengespeichert (T.tc), sonst wird es teuer
 const tSettled = T => T.tc ? T.tc.settled : tribeFields(T).length >= 3 || !!T.storehouse;
@@ -2918,9 +2921,9 @@ const NEW_TECH = {
   // ---- Jungsteinzeit
   saatgut:    { cat: 'nahrung', name: 'Saatgut auslesen', icon: '🌾', req: ['ackerbau'], D: 12000, ctx: { farm: 1 }, desc: 'Die besten Körner werden nicht gegessen, sondern wieder gesät. Das Korn wird von Jahr zu Jahr größer.', eff: 'Ernte +30 %' },
   huelsen:    { cat: 'nahrung', name: 'Hülsenfrüchte', icon: '🫘', req: ['ackerbau'], D: 10000, ctx: { farm: 0.7, gather: 0.2 }, desc: 'Linsen und Erbsen zwischen dem Korn. Sie machen satt und den Boden fruchtbar.', eff: 'Ernte +15 %' },
-  schaf:      { cat: 'tiere', name: 'Schafzucht', icon: '🐑', req: ['viehzucht'], D: 12000, ctx: { sheepnear: 1, herd: 0.4 }, desc: 'Wilde Mufflons werden gezähmt. Ihr Fell wird zu Wolle.', eff: 'Schafe: Wolle und Fleisch' },
-  rind:       { cat: 'tiere', name: 'Rinderzucht', icon: '🐂', req: ['viehzucht'], D: 16000, ctx: { cattlenear: 1, herd: 0.4 }, cond: tSettled, condTxt: 'sesshafte Sippe', desc: 'Der gewaltige Auerochse wird über Generationen zum zahmen Rind.', eff: 'Rinder: viel Fleisch, später Zugkraft' },
-  schwein:    { cat: 'tiere', name: 'Schweinezucht', icon: '🐖', req: ['viehzucht'], D: 11000, ctx: { pignear: 1, herd: 0.3 }, cond: tSettled, condTxt: 'sesshafte Sippe', desc: 'Wildschweine fressen Abfälle am Dorfrand – bis sie bleiben.', eff: 'Schweine: Fleisch aus Abfall' },
+  schaf:      { cat: 'tiere', name: 'Schafzucht', icon: '🐑', req: ['viehzucht'], D: 7000, ctx: { sheepnear: 1.5, herd: 0.7 }, desc: 'Wilde Mufflons werden gezähmt. Ihr Fell wird zu Wolle.', eff: 'Schafe: Wolle und Fleisch' },
+  rind:       { cat: 'tiere', name: 'Rinderzucht', icon: '🐂', req: ['viehzucht'], D: 10000, ctx: { cattlenear: 1.5, herd: 0.7 }, cond: tSettled, condTxt: 'sesshafte Sippe', desc: 'Der gewaltige Auerochse wird über Generationen zum zahmen Rind.', eff: 'Rinder: viel Fleisch, später Zugkraft' },
+  schwein:    { cat: 'tiere', name: 'Schweinezucht', icon: '🐖', req: ['viehzucht'], D: 7000, ctx: { pignear: 1.5, herd: 0.6 }, cond: tSettled, condTxt: 'sesshafte Sippe', desc: 'Wildschweine fressen Abfälle am Dorfrand – bis sie bleiben.', eff: 'Schweine: Fleisch aus Abfall' },
   lehmziegel: { cat: 'bauen', name: 'Lehmziegel', icon: '🧱', req: ['toepfern', 'huette'], D: 11000, ctx: { build: 0.8, clayfire: 0.4 }, desc: 'Lehm mit Stroh in Formen pressen und in der Sonne trocknen. Häuser ohne Steinbruch.', eff: 'Feste, warme Lehmhäuser' },
   steinbeil:  { cat: 'handwerk', name: 'Geschliffenes Steinbeil', icon: '🪓', req: ['faustkeil', 'mahlstein'], D: 9000, ctx: { woodcut: 1, craft: 0.3 }, desc: 'Ein Beil, geschliffen statt geschlagen. Bäume fallen in einem Bruchteil der Zeit.', eff: 'Holz und Roden schneller' },
   backofen:   { cat: 'nahrung', name: 'Backofen & Brot', icon: '🍞', req: ['toepfern', 'mahlstein', 'ackerbau'], D: 12000, ctx: { cook: 1, farm: 0.2 }, desc: 'Gemahlenes Korn mit Wasser zu Fladen backen. Brot hält sich und nährt.', eff: 'Gesünder, Getreide nährt mehr', build: 'oven' },
@@ -2936,6 +2939,7 @@ const NEW_TECH = {
   toepferscheibe: { cat: 'handwerk', name: 'Töpferscheibe', icon: '🏺', req: ['brennofen'], D: 14000, ctx: { potter: 1 }, desc: 'Eine drehende Scheibe formt Gefäße in wenigen Augenblicken.', eff: 'Töpfern 2,5× so schnell, doppelt so viele Töpfe' },
   kupfer_haemmern: { cat: 'handwerk', name: 'Kupfer hämmern', icon: '🟤', req: ['schmuck', 'steinbeil'], D: 15000, ctx: { stone: 0.6, craft: 0.5 }, desc: 'Ein grünlich schimmernder Stein lässt sich kalt zu Perlen und Ahlen hämmern.', eff: 'Kupferschmuck für Angesehene, wertvolle Tauschware' },
   kupfer_guss: { cat: 'handwerk', name: 'Kupfer schmelzen & gießen', icon: '⚒', req: ['kupfer_haemmern', 'brennofen'], D: 22000, ctx: { potter: 0.6, craft: 0.6 }, desc: 'Im heißen Ofen fließt das Erz. In Formen gegossen entstehen Beile, Dolche, Speerspitzen.', eff: 'Kupferwaffen und -werkzeug' },
+  pferd:      { cat: 'tiere', name: 'Pferdezucht', icon: '🐎', req: ['viehzucht', 'esel'], D: 14000, ctx: { horsenear: 1.4, herd: 0.5 }, desc: 'Wildpferde werden eingefangen, gezähmt und schließlich geritten. Wer reitet, ist doppelt so schnell.', eff: 'Kundschafter, Boten, Händler und Krieger reiten – fast doppelt so schnell; Pferde im Gehege' },
   esel:       { cat: 'tiere', name: 'Esel als Lasttier', icon: '🫏', req: ['viehzucht'], D: 13000, ctx: { donkeynear: 1, trade: 0.4 }, desc: 'Der genügsame Wildesel trägt schwere Lasten über weite Strecken.', eff: 'Handel reicht weiter' },
   segelboot:  { cat: 'wasser', name: 'Schilfboot mit Segel', icon: '⛵', req: ['einbaum', 'webstuhl'], D: 15000, ctx: { fishing: 0.5, waterblock: 0.6, trade: 0.4 }, desc: 'Gebündeltes Schilf trägt ein Tuchsegel. Der Wind arbeitet nun für den Menschen.', eff: 'Schneller übers Wasser, Handel' },
   rad:        { cat: 'wasser', name: 'Rad', icon: '☸', req: ['toepferscheibe', 'steinbeil'], D: 22000, ctx: { potter: 0.4, build: 0.4, carry: 1 }, desc: 'Eine Scheibe auf einer Achse – aus der Töpferscheibe wird ein Wagenrad.', eff: 'Scheibenräder – Grundlage für den Wagen' },
@@ -2992,7 +2996,7 @@ function techTick(n, T) {
   }
   if (seasonNow() === 3) add('winter', 2);
   // wilde Tiere in der Nähe wecken Ideen
-  for (const [k, cx] of [['sheep', 'sheepnear'], ['cattle', 'cattlenear'], ['pig', 'pignear'], ['donkey', 'donkeynear']]) if (n.know.viehzucht && W.animals.some(a => a.k === k && !a.tribe && dist(a.x, a.y, n.x, n.y) < 12)) add(cx, 8);
+  for (const [k, cx] of [['sheep', 'sheepnear'], ['cattle', 'cattlenear'], ['pig', 'pignear'], ['donkey', 'donkeynear'], ['horse', 'horsenear']]) if (n.know.viehzucht && W.animals.some(a => a.k === k && !a.tribe && dist(a.x, a.y, n.x, n.y) < 25)) add(cx, 14);
 }
 // Wissen der Sippe (für Wirkungen) – einmal am Tag
 function updateTribeKnow(T) { const k = {}; for (const id of T.members) { const m = NPC.get(id); if (m) for (const t in m.know) k[t] = 1; } T.kn = k; }
@@ -3039,8 +3043,8 @@ function techDaily(T) {
     }
   }
   // neue Haustiere: Die Entdecker fangen die ersten wilden Tiere ein
-  for (const [k, kind] of [['schaf', 'sheep'], ['rind', 'cattle'], ['schwein', 'pig'], ['esel', 'donkey']]) {
-    if (TK(T, k) && !tHerd(T, kind) && rnd() < 0.05) { const p = penOf(T); const c = kind === 'cattle' ? 2 : 3; for (let i = 0; i < c; i++) W.animals.push({ id: W.nextId++, k: kind, x: p[0] + rnd() * 2, y: p[1] + rnd() * 2, tx: p[0], ty: p[1], born: W.tick - C.TPY, tribe: T.id }); chron(1, `Die ${T.name} halten nun ${{ sheep: 'Schafe', cattle: 'Rinder', pig: 'Schweine', donkey: 'Esel' }[kind]}.`, { tribe: T.id }); }
+  for (const [k, kind] of [['schaf', 'sheep'], ['rind', 'cattle'], ['schwein', 'pig'], ['esel', 'donkey'], ['pferd', 'horse']]) {
+    if (TK(T, k) && !tHerd(T, kind) && rnd() < 0.05) { const p = penOf(T); const c = kind === 'cattle' ? 2 : 3; for (let i = 0; i < c; i++) W.animals.push({ id: W.nextId++, k: kind, x: p[0] + rnd() * 2, y: p[1] + rnd() * 2, tx: p[0], ty: p[1], born: W.tick - C.TPY, tribe: T.id }); chron(1, `Die ${T.name} halten nun ${{ sheep: 'Schafe', cattle: 'Rinder', pig: 'Schweine', donkey: 'Esel', horse: 'Pferde' }[kind]}.`, { tribe: T.id }); }
   }
 }
 // Die Bauten im Lager
@@ -3065,10 +3069,10 @@ function craftTime(T, what) {
   return Math.max(2, Math.round(d));
 }
 
-const TECH_SEE = {"faustkeil": "Steinwerkzeug in der Hand beim Holzen, Bauen und Herstellen", "speer": "Speer bei Jagd und Kampf", "feuer_machen": "Das Lagerfeuer wird neu entfacht, wenn es erlischt", "kochen": "Bratspieß über dem Lagerfeuer", "fellkleidung": "Fellkleidung im Herbst und Winter", "flechten": "Körbe am Lager und beim Sammeln", "fischen": "Fischgestell am Ufer, Fischer mit Speer", "huette": "Hütten aus Ästen und Rinde", "heilkraeuter": "Kräuter-Trockengestell am Lager, Heiler mit Kräutern", "bestattung": "Grabhügel", "malerei": "Felsbilder", "toepfern": "Tontöpfe am Lager und in den Häusern", "zaehmung": "Hunde begleiten ihre Menschen", "bogen": "Pfeil und Bogen bei Jagd und Kampf", "palisade": "Palisade rund ums Dorf", "viehzucht": "Gehege mit Ziegen", "reusen": "Reusen im seichten Wasser", "weben": "Gewebte Kleidung, Webstuhl in den Häusern", "floss": "Flöße auf dem Wasser", "steinbau": "Steinhäuser", "ackerbau": "Felder rund ums Dorf", "nadel": "Knochennadel beim Nähen von Kleidung", "netz": "Fischer mit Netz, Netz-Trockengestell am Ufer", "mahlstein": "Mahlstein am Lager und in den Häusern", "einbaum": "Einbaum am Ufer und auf dem Wasser", "vorratsgrube": "Abgedeckte Vorratsgruben am Lager – je mehr Vorrat, desto mehr", "sichel": "Sichel bei der Ernte", "schmuck": "Angesehene tragen Ketten aus Muscheln und Zähnen", "saatgut": "Kräftigere Ernte (nur in den Zahlen)", "huelsen": "Felder mit Linsen und Erbsen zwischen dem Korn", "schaf": "Schafe im Gehege", "rind": "Rinder im Gehege", "schwein": "Schweine im Gehege", "lehmziegel": "Lehmhäuser mit Flachdach, Ziegel trocknen im Werkhof", "steinbeil": "Geschliffenes Beil beim Holzen und Bauen", "backofen": "Backofen im Werkhof", "bier": "Große Krüge am Lager", "spindel": "Spindel beim Weben", "webstuhl": "Leinenkleidung", "milch": "Milchkrüge am Gehege", "bewaesserung": "Kanäle an den Feldern", "hakenpflug": "Pflug auf dem Feld", "ochsen": "Ochse zieht den Pflug", "brennofen": "Brennofen mit Rauch im Werkhof", "toepferscheibe": "Töpferscheibe im Werkhof", "kupfer_haemmern": "Kupferschmuck an Angesehenen", "kupfer_guss": "Kupferbeil und Kupferspeer", "esel": "Esel im Gehege, Händler mit Packesel", "segelboot": "Schilfboot mit Segel", "rad": "Scheibenräder im Werkhof", "wagen": "Karren am Vorratshaus, Händler mit Wagen", "dattel": "Dattelpalmen an den Feldern", "zaehlsteine": "Schale mit Zählsteinen im Vorratshaus", "siegel": "Gesiegelte Kisten im Vorratshaus", "masse": "Gerechterer Handel (nur in den Zahlen)", "kalender": "Steinkreis am Dorfrand", "zahlen": "Grundlage der Schrift (nur in den Zahlen)", "rationen": "Tontafel im Vorratshaus", "tempelbau": "Stufentempel", "schrift": "Tontafeln mit Zeichen im Vorratshaus", "schule": "Kinder lernen schneller (nur in den Zahlen)", "fernhandel": "Marktstand im Dorf, Händler unterwegs", "handwerker": "Schnellere Werkstattarbeit (nur in den Zahlen)", "tempelwirtschaft": "Priesterherrschaft wird möglich", "stadtplanung": "Stadtmauer aus Ziegeln", "gerichte": "Weniger Streit (nur in der Chronik)", "heer": "Kämpfer mit Kupferhelm und Schild", "koenigtum": "Krone auf dem Haupt des Herrschers", "schuldknechtschaft": "Unfreie im Dorf (Menschen-Ansicht)"};
+const TECH_SEE = {"faustkeil": "Steinwerkzeug in der Hand beim Holzen, Bauen und Herstellen", "speer": "Speer bei Jagd und Kampf", "feuer_machen": "Das Lagerfeuer wird neu entfacht, wenn es erlischt", "kochen": "Bratspieß über dem Lagerfeuer", "fellkleidung": "Fellkleidung im Herbst und Winter", "flechten": "Körbe am Lager und beim Sammeln", "fischen": "Fischgestell am Ufer, Fischer mit Speer", "huette": "Hütten aus Ästen und Rinde", "heilkraeuter": "Kräuter-Trockengestell am Lager, Heiler mit Kräutern", "bestattung": "Grabhügel", "malerei": "Felsbilder", "toepfern": "Tontöpfe am Lager und in den Häusern", "zaehmung": "Hunde begleiten ihre Menschen", "bogen": "Pfeil und Bogen bei Jagd und Kampf", "palisade": "Palisade rund ums Dorf", "viehzucht": "Gehege mit Ziegen", "reusen": "Reusen im seichten Wasser", "weben": "Gewebte Kleidung, Webstuhl in den Häusern", "floss": "Flöße auf dem Wasser", "steinbau": "Steinhäuser", "ackerbau": "Felder rund ums Dorf", "nadel": "Knochennadel beim Nähen von Kleidung", "netz": "Fischer mit Netz, Netz-Trockengestell am Ufer", "mahlstein": "Mahlstein am Lager und in den Häusern", "einbaum": "Einbaum am Ufer und auf dem Wasser", "vorratsgrube": "Abgedeckte Vorratsgruben am Lager – je mehr Vorrat, desto mehr", "sichel": "Sichel bei der Ernte", "schmuck": "Angesehene tragen Ketten aus Muscheln und Zähnen", "saatgut": "Kräftigere Ernte (nur in den Zahlen)", "huelsen": "Felder mit Linsen und Erbsen zwischen dem Korn", "schaf": "Schafe im Gehege", "rind": "Rinder im Gehege", "schwein": "Schweine im Gehege", "lehmziegel": "Lehmhäuser mit Flachdach, Ziegel trocknen im Werkhof", "steinbeil": "Geschliffenes Beil beim Holzen und Bauen", "backofen": "Backofen im Werkhof", "bier": "Große Krüge am Lager", "spindel": "Spindel beim Weben", "webstuhl": "Leinenkleidung", "milch": "Milchkrüge am Gehege", "bewaesserung": "Kanäle an den Feldern", "hakenpflug": "Pflug auf dem Feld", "ochsen": "Ochse zieht den Pflug", "brennofen": "Brennofen mit Rauch im Werkhof", "toepferscheibe": "Töpferscheibe im Werkhof", "kupfer_haemmern": "Kupferschmuck an Angesehenen", "kupfer_guss": "Kupferbeil und Kupferspeer", "esel": "Esel im Gehege, Händler mit Packesel", "pferd": "Pferde im Gehege, Reiter auf Erkundung, Botengang und Kriegszug", "segelboot": "Schilfboot mit Segel", "rad": "Scheibenräder im Werkhof", "wagen": "Karren am Vorratshaus, Händler mit Wagen", "dattel": "Dattelpalmen an den Feldern", "zaehlsteine": "Schale mit Zählsteinen im Vorratshaus", "siegel": "Gesiegelte Kisten im Vorratshaus", "masse": "Gerechterer Handel (nur in den Zahlen)", "kalender": "Steinkreis am Dorfrand", "zahlen": "Grundlage der Schrift (nur in den Zahlen)", "rationen": "Tontafel im Vorratshaus", "tempelbau": "Stufentempel", "schrift": "Tontafeln mit Zeichen im Vorratshaus", "schule": "Kinder lernen schneller (nur in den Zahlen)", "fernhandel": "Marktstand im Dorf, Händler unterwegs", "handwerker": "Schnellere Werkstattarbeit (nur in den Zahlen)", "tempelwirtschaft": "Priesterherrschaft wird möglich", "stadtplanung": "Stadtmauer aus Ziegeln", "gerichte": "Weniger Streit (nur in der Chronik)", "heer": "Kämpfer mit Kupferhelm und Schild", "koenigtum": "Krone auf dem Haupt des Herrschers", "schuldknechtschaft": "Unfreie im Dorf (Menschen-Ansicht)"};
 for (const k in TECH_SEE) if (TECH[k]) TECH[k].see = TECH_SEE[k];
 
-const TECH_HOW = {"nadel": "bohrt ein Loch in einen Knochensplitter und fädelt eine Sehne hindurch", "netz": "knüpft Schnüre zu einem Gitter und zieht damit einen ganzen Schwarm an Land", "mahlstein": "zerreibt Körner zwischen zwei Steinen zu Mehl", "einbaum": "höhlt einen Baumstamm mit Feuer und Stein aus und setzt sich hinein", "vorratsgrube": "gräbt eine Grube, legt sie mit Rinde aus und deckt die Vorräte zu", "sichel": "setzt Feuersteinklingen in ein gebogenes Holz und schneidet damit Gras im Bündel", "schmuck": "reiht Muscheln und Zähne auf eine Schnur und trägt sie um den Hals", "saatgut": "legt die dicksten Körner beiseite, statt sie zu essen", "huelsen": "sät Linsen zwischen das Korn", "schaf": "treibt ein Mufflon in den Pferch", "rind": "zähmt ein junges Auerochsenkalb", "schwein": "lockt ein Wildschwein mit Abfällen an, bis es bleibt", "lehmziegel": "presst Lehm mit Stroh in eine Holzform und lässt ihn in der Sonne trocknen", "steinbeil": "schleift einen Stein so lange, bis seine Schneide glänzt", "backofen": "formt eine Kuppel aus Lehm und backt darin Fladen", "bier": "vergisst einen Topf mit nassem Korn – und findet ein schäumendes Getränk", "spindel": "steckt einen Stein auf einen Stab und dreht damit Garn", "webstuhl": "spannt Fäden mit Steingewichten zwischen zwei Balken", "milch": "melkt eine Ziege und lässt die Milch säuern", "bewaesserung": "gräbt einen Graben vom Fluss zum Feld", "hakenpflug": "zieht einen gebogenen Ast durch die Erde", "ochsen": "spannt einen Ochsen vor den Pflug", "brennofen": "mauert um das Feuer eine Kammer aus Lehm", "toepferscheibe": "setzt eine Scheibe auf einen Zapfen und dreht sie beim Töpfern", "kupfer_haemmern": "hämmert einen grün schimmernden Stein zu einer Perle", "kupfer_guss": "sieht flüssiges Metall aus dem Ofen rinnen und gießt es in eine Form", "esel": "lädt einem Wildesel Säcke auf", "segelboot": "spannt ein Tuch auf ein Schilfboot und lässt sich vom Wind treiben", "rad": "nimmt die Scheibe von der Töpferachse und rollt sie über den Boden", "wagen": "baut zwei Räder unter einen Kasten und spannt einen Ochsen davor", "dattel": "pflanzt Dattelkerne an den Rand des Kanals", "zaehlsteine": "formt für jeden Krug eine kleine Tonmarke", "siegel": "schnitzt ein Zeichen in einen Stein und drückt es in Ton", "masse": "legt fest, wie viel ein Krug fasst und ein Stein wiegt", "kalender": "zählt die Monde zwischen zwei Sonnenwenden", "zahlen": "bündelt die Zählsteine in Sechzigern", "rationen": "teilt jedem genau zu, was ihm zusteht", "tempelbau": "errichtet den Göttern ein Haus auf einer Plattform", "schrift": "ritzt Zeichen in eine Tontafel, die jeder lesen kann, der sie gelernt hat", "schule": "versammelt Kinder um sich und lehrt sie die Zeichen", "fernhandel": "zieht mit Waren zu fernen Sippen", "handwerker": "arbeitet nur noch in der Werkstatt und tauscht seine Ware gegen Essen", "tempelwirtschaft": "lässt die Ernte im Tempel sammeln und verteilen", "stadtplanung": "zieht Gassen und eine Mauer um die Siedlung", "gerichte": "lässt Streit vor den Alten verhandeln", "heer": "stellt Kämpfer auf, die nur für den Krieg da sind", "koenigtum": "lässt sich als König ausrufen", "schuldknechtschaft": "verlangt Arbeit für eine Schuld, die nicht bezahlt wird"};
+const TECH_HOW = {"nadel": "bohrt ein Loch in einen Knochensplitter und fädelt eine Sehne hindurch", "netz": "knüpft Schnüre zu einem Gitter und zieht damit einen ganzen Schwarm an Land", "mahlstein": "zerreibt Körner zwischen zwei Steinen zu Mehl", "einbaum": "höhlt einen Baumstamm mit Feuer und Stein aus und setzt sich hinein", "vorratsgrube": "gräbt eine Grube, legt sie mit Rinde aus und deckt die Vorräte zu", "sichel": "setzt Feuersteinklingen in ein gebogenes Holz und schneidet damit Gras im Bündel", "schmuck": "reiht Muscheln und Zähne auf eine Schnur und trägt sie um den Hals", "saatgut": "legt die dicksten Körner beiseite, statt sie zu essen", "huelsen": "sät Linsen zwischen das Korn", "schaf": "treibt ein Mufflon in den Pferch", "rind": "zähmt ein junges Auerochsenkalb", "schwein": "lockt ein Wildschwein mit Abfällen an, bis es bleibt", "lehmziegel": "presst Lehm mit Stroh in eine Holzform und lässt ihn in der Sonne trocknen", "steinbeil": "schleift einen Stein so lange, bis seine Schneide glänzt", "backofen": "formt eine Kuppel aus Lehm und backt darin Fladen", "bier": "vergisst einen Topf mit nassem Korn – und findet ein schäumendes Getränk", "spindel": "steckt einen Stein auf einen Stab und dreht damit Garn", "webstuhl": "spannt Fäden mit Steingewichten zwischen zwei Balken", "milch": "melkt eine Ziege und lässt die Milch säuern", "bewaesserung": "gräbt einen Graben vom Fluss zum Feld", "hakenpflug": "zieht einen gebogenen Ast durch die Erde", "ochsen": "spannt einen Ochsen vor den Pflug", "brennofen": "mauert um das Feuer eine Kammer aus Lehm", "toepferscheibe": "setzt eine Scheibe auf einen Zapfen und dreht sie beim Töpfern", "kupfer_haemmern": "hämmert einen grün schimmernden Stein zu einer Perle", "kupfer_guss": "sieht flüssiges Metall aus dem Ofen rinnen und gießt es in eine Form", "esel": "lädt einem Wildesel Säcke auf", "pferd": "wagt es, sich auf den Rücken eines gezähmten Pferdes zu setzen", "segelboot": "spannt ein Tuch auf ein Schilfboot und lässt sich vom Wind treiben", "rad": "nimmt die Scheibe von der Töpferachse und rollt sie über den Boden", "wagen": "baut zwei Räder unter einen Kasten und spannt einen Ochsen davor", "dattel": "pflanzt Dattelkerne an den Rand des Kanals", "zaehlsteine": "formt für jeden Krug eine kleine Tonmarke", "siegel": "schnitzt ein Zeichen in einen Stein und drückt es in Ton", "masse": "legt fest, wie viel ein Krug fasst und ein Stein wiegt", "kalender": "zählt die Monde zwischen zwei Sonnenwenden", "zahlen": "bündelt die Zählsteine in Sechzigern", "rationen": "teilt jedem genau zu, was ihm zusteht", "tempelbau": "errichtet den Göttern ein Haus auf einer Plattform", "schrift": "ritzt Zeichen in eine Tontafel, die jeder lesen kann, der sie gelernt hat", "schule": "versammelt Kinder um sich und lehrt sie die Zeichen", "fernhandel": "zieht mit Waren zu fernen Sippen", "handwerker": "arbeitet nur noch in der Werkstatt und tauscht seine Ware gegen Essen", "tempelwirtschaft": "lässt die Ernte im Tempel sammeln und verteilen", "stadtplanung": "zieht Gassen und eine Mauer um die Siedlung", "gerichte": "lässt Streit vor den Alten verhandeln", "heer": "stellt Kämpfer auf, die nur für den Krieg da sind", "koenigtum": "lässt sich als König ausrufen", "schuldknechtschaft": "verlangt Arbeit für eine Schuld, die nicht bezahlt wird"};
 for (const k in TECH_HOW) if (TECH[k]) TECH[k].how = TECH_HOW[k];
 
 // =====================================================================
@@ -3320,7 +3324,7 @@ const TECH = {
   zaehmung:    { name: 'Tierzähmung', icon: '🐕', req: ['speer'], D: 10500, ctx: { wolfnear: 1, experiment: 0.3 }, desc: 'Wölfe gewöhnen sich an Menschen und werden zu Jagdgefährten.' },
   bogen:       { name: 'Pfeil & Bogen', icon: '🏹', req: ['speer', 'flechten'], D: 9000, ctx: { hunt: 0.8, experiment: 0.5 }, desc: 'Eine gespannte Sehne schleudert Pfeile weit und genau. Jagd und Kampf verändern sich.' },
   palisade:    { name: 'Palisaden', icon: '🪵', req: ['faustkeil', 'huette'], D: 7500, ctx: { raided: 3, build: 0.4, experiment: 0.3 }, desc: 'Angespitzte Pfähle im Kreis um das Lager. Schutz vor Räubern, Feinden und Wölfen.' },
-  viehzucht:   { name: 'Viehzucht', icon: '🐐', req: ['flechten', 'faustkeil'], D: 8500, ctx: { goatnear: 1, experiment: 0.3 }, desc: 'Wildziegen einfangen, einpferchen und vermehren. Milch und Fleisch ohne Jagd.' },
+  viehzucht:   { name: 'Viehzucht', icon: '🐐', req: ['flechten', 'faustkeil'], D: 6500, ctx: { goatnear: 1.5, experiment: 0.3 }, desc: 'Wildziegen einfangen, einpferchen und vermehren. Milch und Fleisch ohne Jagd.' },
   reusen:      { name: 'Fischreusen', icon: '🪤', req: ['fischen', 'flechten'], D: 5000, ctx: { water: 0.8, experiment: 0.4 }, desc: 'Geflochtene Fallen im seichten Wasser fangen Fische, während man schläft.' },
   weben:       { name: 'Weben', icon: '🧶', req: ['flechten', 'viehzucht'], D: 9000, ctx: { goatnear: 0.3, gather: 0.15, rest: 0.3, experiment: 0.6 }, desc: 'Ziegenhaar und Pflanzenfasern zu Fäden drehen und zu Stoff verweben. Leichte, warme Kleidung.' },
   floss:       { name: 'Floß', icon: '🛶', req: ['flechten', 'faustkeil'], D: 7000, ctx: { waterblock: 1, water: 0.3, experiment: 0.4 }, desc: 'Baumstämme zusammenbinden und über Flüsse und Seen setzen.' },
@@ -4000,7 +4004,7 @@ function startAct(n, o) {
 
 function stepNpc(n) {
   const T = tribeOf(n), a = n.act, age = ageY(n);
-  const speed = (age < 12 ? 0.7 : 1) * (n.injured > 0 ? 0.5 : 1) * (n.sick > 0 ? 0.7 : 1);
+  const speed = (age < 12 ? 0.7 : 1) * (n.injured > 0 ? 0.5 : 1) * (n.sick > 0 ? 0.7 : 1) * (riding(n, T) ? 1.7 : 1);
   // Bedürfnisse
   n.hunger = Math.min(100, n.hunger + (seasonNow() === 3 ? 0.72 : 0.9));
   if (!(a && a.type === 'sleep' && a.stage === 1)) n.energy = Math.max(0, n.energy - 1.35);
@@ -5450,7 +5454,7 @@ function dailyTick() {
     const deer = W.animals.filter(a => a.k === 'deer');
     const cap = 450; let born = 0;
     for (const d of deer) if (deer.length + born < cap && rnd() < 0.42) { W.animals.push({ id: W.nextId++, k: 'deer', x: d.x, y: d.y, tx: d.x, ty: d.y, born: W.tick }); born++; }
-    const horses = W.animals.filter(a => a.k === 'horse'); for (const h of horses) if (horses.length < 90 && rnd() < 0.2) W.animals.push({ id: W.nextId++, k: 'horse', x: h.x, y: h.y, tx: h.x, ty: h.y, born: W.tick });
+    const horses = W.animals.filter(a => a.k === 'horse' && !a.tribe); for (const h of horses) if (horses.length < 90 && rnd() < 0.2) W.animals.push({ id: W.nextId++, k: 'horse', x: h.x, y: h.y, tx: h.x, ty: h.y, born: W.tick });
     const AR = C.MW * C.MH / 108000;
     for (const K in HERD_K) { const all = W.animals.filter(a => a.k === K), cnt = {}; let wild = 0; for (const g of all) { if (g.tribe) cnt[g.tribe] = (cnt[g.tribe] || 0) + 1; else wild++; }
       const cap = (K === 'goat' ? 90 : 50) * AR, pb = { goat: 0.55, sheep: 0.55, cattle: 0.32, pig: 0.75, donkey: 0.3 }[K];
@@ -5999,7 +6003,10 @@ Object.assign(TECH.zaehmung, { cat: 'tiere' }); Object.assign(TECH.bogen, { cat:
 Object.assign(TECH.viehzucht, { cat: 'tiere' }); Object.assign(TECH.reusen, { cat: 'wasser' }); Object.assign(TECH.weben, { cat: 'handwerk' });
 Object.assign(TECH.floss, { cat: 'wasser' }); Object.assign(TECH.steinbau, { cat: 'bauen' }); Object.assign(TECH.ackerbau, { cat: 'nahrung' });
 
-const HERD_K = { goat: 'viehzucht', sheep: 'schaf', cattle: 'rind', pig: 'schwein', donkey: 'esel' };
+const HERD_K = { goat: 'viehzucht', sheep: 'schaf', cattle: 'rind', pig: 'schwein', donkey: 'esel', horse: 'pferd' };
+// Wer reitet? Kundschafter, Boten, Händler und Krieger – wenn die Sippe Pferde hat
+const RIDE_ACT = { explore: 1, diplo: 1, visit: 1, raid: 1, return: 1, steal: 1 };
+const riding = (n, T) => !!(n.act && RIDE_ACT[n.act.type] && TK(T, 'pferd') && T.tc && T.tc.herd && T.tc.herd.horse && ageY(n) >= 14);
 const tPop = (T, n) => T.members.length >= n;
 // Lage der Sippe – einmal am Tag zwischengespeichert (T.tc), sonst wird es teuer
 const tSettled = T => T.tc ? T.tc.settled : tribeFields(T).length >= 3 || !!T.storehouse;
@@ -6020,9 +6027,9 @@ const NEW_TECH = {
   // ---- Jungsteinzeit
   saatgut:    { cat: 'nahrung', name: 'Saatgut auslesen', icon: '🌾', req: ['ackerbau'], D: 12000, ctx: { farm: 1 }, desc: 'Die besten Körner werden nicht gegessen, sondern wieder gesät. Das Korn wird von Jahr zu Jahr größer.', eff: 'Ernte +30 %' },
   huelsen:    { cat: 'nahrung', name: 'Hülsenfrüchte', icon: '🫘', req: ['ackerbau'], D: 10000, ctx: { farm: 0.7, gather: 0.2 }, desc: 'Linsen und Erbsen zwischen dem Korn. Sie machen satt und den Boden fruchtbar.', eff: 'Ernte +15 %' },
-  schaf:      { cat: 'tiere', name: 'Schafzucht', icon: '🐑', req: ['viehzucht'], D: 12000, ctx: { sheepnear: 1, herd: 0.4 }, desc: 'Wilde Mufflons werden gezähmt. Ihr Fell wird zu Wolle.', eff: 'Schafe: Wolle und Fleisch' },
-  rind:       { cat: 'tiere', name: 'Rinderzucht', icon: '🐂', req: ['viehzucht'], D: 16000, ctx: { cattlenear: 1, herd: 0.4 }, cond: tSettled, condTxt: 'sesshafte Sippe', desc: 'Der gewaltige Auerochse wird über Generationen zum zahmen Rind.', eff: 'Rinder: viel Fleisch, später Zugkraft' },
-  schwein:    { cat: 'tiere', name: 'Schweinezucht', icon: '🐖', req: ['viehzucht'], D: 11000, ctx: { pignear: 1, herd: 0.3 }, cond: tSettled, condTxt: 'sesshafte Sippe', desc: 'Wildschweine fressen Abfälle am Dorfrand – bis sie bleiben.', eff: 'Schweine: Fleisch aus Abfall' },
+  schaf:      { cat: 'tiere', name: 'Schafzucht', icon: '🐑', req: ['viehzucht'], D: 7000, ctx: { sheepnear: 1.5, herd: 0.7 }, desc: 'Wilde Mufflons werden gezähmt. Ihr Fell wird zu Wolle.', eff: 'Schafe: Wolle und Fleisch' },
+  rind:       { cat: 'tiere', name: 'Rinderzucht', icon: '🐂', req: ['viehzucht'], D: 10000, ctx: { cattlenear: 1.5, herd: 0.7 }, cond: tSettled, condTxt: 'sesshafte Sippe', desc: 'Der gewaltige Auerochse wird über Generationen zum zahmen Rind.', eff: 'Rinder: viel Fleisch, später Zugkraft' },
+  schwein:    { cat: 'tiere', name: 'Schweinezucht', icon: '🐖', req: ['viehzucht'], D: 7000, ctx: { pignear: 1.5, herd: 0.6 }, cond: tSettled, condTxt: 'sesshafte Sippe', desc: 'Wildschweine fressen Abfälle am Dorfrand – bis sie bleiben.', eff: 'Schweine: Fleisch aus Abfall' },
   lehmziegel: { cat: 'bauen', name: 'Lehmziegel', icon: '🧱', req: ['toepfern', 'huette'], D: 11000, ctx: { build: 0.8, clayfire: 0.4 }, desc: 'Lehm mit Stroh in Formen pressen und in der Sonne trocknen. Häuser ohne Steinbruch.', eff: 'Feste, warme Lehmhäuser' },
   steinbeil:  { cat: 'handwerk', name: 'Geschliffenes Steinbeil', icon: '🪓', req: ['faustkeil', 'mahlstein'], D: 9000, ctx: { woodcut: 1, craft: 0.3 }, desc: 'Ein Beil, geschliffen statt geschlagen. Bäume fallen in einem Bruchteil der Zeit.', eff: 'Holz und Roden schneller' },
   backofen:   { cat: 'nahrung', name: 'Backofen & Brot', icon: '🍞', req: ['toepfern', 'mahlstein', 'ackerbau'], D: 12000, ctx: { cook: 1, farm: 0.2 }, desc: 'Gemahlenes Korn mit Wasser zu Fladen backen. Brot hält sich und nährt.', eff: 'Gesünder, Getreide nährt mehr', build: 'oven' },
@@ -6038,6 +6045,7 @@ const NEW_TECH = {
   toepferscheibe: { cat: 'handwerk', name: 'Töpferscheibe', icon: '🏺', req: ['brennofen'], D: 14000, ctx: { potter: 1 }, desc: 'Eine drehende Scheibe formt Gefäße in wenigen Augenblicken.', eff: 'Töpfern 2,5× so schnell, doppelt so viele Töpfe' },
   kupfer_haemmern: { cat: 'handwerk', name: 'Kupfer hämmern', icon: '🟤', req: ['schmuck', 'steinbeil'], D: 15000, ctx: { stone: 0.6, craft: 0.5 }, desc: 'Ein grünlich schimmernder Stein lässt sich kalt zu Perlen und Ahlen hämmern.', eff: 'Kupferschmuck für Angesehene, wertvolle Tauschware' },
   kupfer_guss: { cat: 'handwerk', name: 'Kupfer schmelzen & gießen', icon: '⚒', req: ['kupfer_haemmern', 'brennofen'], D: 22000, ctx: { potter: 0.6, craft: 0.6 }, desc: 'Im heißen Ofen fließt das Erz. In Formen gegossen entstehen Beile, Dolche, Speerspitzen.', eff: 'Kupferwaffen und -werkzeug' },
+  pferd:      { cat: 'tiere', name: 'Pferdezucht', icon: '🐎', req: ['viehzucht', 'esel'], D: 14000, ctx: { horsenear: 1.4, herd: 0.5 }, desc: 'Wildpferde werden eingefangen, gezähmt und schließlich geritten. Wer reitet, ist doppelt so schnell.', eff: 'Kundschafter, Boten, Händler und Krieger reiten – fast doppelt so schnell; Pferde im Gehege' },
   esel:       { cat: 'tiere', name: 'Esel als Lasttier', icon: '🫏', req: ['viehzucht'], D: 13000, ctx: { donkeynear: 1, trade: 0.4 }, desc: 'Der genügsame Wildesel trägt schwere Lasten über weite Strecken.', eff: 'Handel reicht weiter' },
   segelboot:  { cat: 'wasser', name: 'Schilfboot mit Segel', icon: '⛵', req: ['einbaum', 'webstuhl'], D: 15000, ctx: { fishing: 0.5, waterblock: 0.6, trade: 0.4 }, desc: 'Gebündeltes Schilf trägt ein Tuchsegel. Der Wind arbeitet nun für den Menschen.', eff: 'Schneller übers Wasser, Handel' },
   rad:        { cat: 'wasser', name: 'Rad', icon: '☸', req: ['toepferscheibe', 'steinbeil'], D: 22000, ctx: { potter: 0.4, build: 0.4, carry: 1 }, desc: 'Eine Scheibe auf einer Achse – aus der Töpferscheibe wird ein Wagenrad.', eff: 'Scheibenräder – Grundlage für den Wagen' },
@@ -6094,7 +6102,7 @@ function techTick(n, T) {
   }
   if (seasonNow() === 3) add('winter', 2);
   // wilde Tiere in der Nähe wecken Ideen
-  for (const [k, cx] of [['sheep', 'sheepnear'], ['cattle', 'cattlenear'], ['pig', 'pignear'], ['donkey', 'donkeynear']]) if (n.know.viehzucht && W.animals.some(a => a.k === k && !a.tribe && dist(a.x, a.y, n.x, n.y) < 12)) add(cx, 8);
+  for (const [k, cx] of [['sheep', 'sheepnear'], ['cattle', 'cattlenear'], ['pig', 'pignear'], ['donkey', 'donkeynear'], ['horse', 'horsenear']]) if (n.know.viehzucht && W.animals.some(a => a.k === k && !a.tribe && dist(a.x, a.y, n.x, n.y) < 25)) add(cx, 14);
 }
 // Wissen der Sippe (für Wirkungen) – einmal am Tag
 function updateTribeKnow(T) { const k = {}; for (const id of T.members) { const m = NPC.get(id); if (m) for (const t in m.know) k[t] = 1; } T.kn = k; }
@@ -6141,8 +6149,8 @@ function techDaily(T) {
     }
   }
   // neue Haustiere: Die Entdecker fangen die ersten wilden Tiere ein
-  for (const [k, kind] of [['schaf', 'sheep'], ['rind', 'cattle'], ['schwein', 'pig'], ['esel', 'donkey']]) {
-    if (TK(T, k) && !tHerd(T, kind) && rnd() < 0.05) { const p = penOf(T); const c = kind === 'cattle' ? 2 : 3; for (let i = 0; i < c; i++) W.animals.push({ id: W.nextId++, k: kind, x: p[0] + rnd() * 2, y: p[1] + rnd() * 2, tx: p[0], ty: p[1], born: W.tick - C.TPY, tribe: T.id }); chron(1, `Die ${T.name} halten nun ${{ sheep: 'Schafe', cattle: 'Rinder', pig: 'Schweine', donkey: 'Esel' }[kind]}.`, { tribe: T.id }); }
+  for (const [k, kind] of [['schaf', 'sheep'], ['rind', 'cattle'], ['schwein', 'pig'], ['esel', 'donkey'], ['pferd', 'horse']]) {
+    if (TK(T, k) && !tHerd(T, kind) && rnd() < 0.05) { const p = penOf(T); const c = kind === 'cattle' ? 2 : 3; for (let i = 0; i < c; i++) W.animals.push({ id: W.nextId++, k: kind, x: p[0] + rnd() * 2, y: p[1] + rnd() * 2, tx: p[0], ty: p[1], born: W.tick - C.TPY, tribe: T.id }); chron(1, `Die ${T.name} halten nun ${{ sheep: 'Schafe', cattle: 'Rinder', pig: 'Schweine', donkey: 'Esel', horse: 'Pferde' }[kind]}.`, { tribe: T.id }); }
   }
 }
 // Die Bauten im Lager
@@ -6167,10 +6175,10 @@ function craftTime(T, what) {
   return Math.max(2, Math.round(d));
 }
 
-const TECH_SEE = {"faustkeil": "Steinwerkzeug in der Hand beim Holzen, Bauen und Herstellen", "speer": "Speer bei Jagd und Kampf", "feuer_machen": "Das Lagerfeuer wird neu entfacht, wenn es erlischt", "kochen": "Bratspieß über dem Lagerfeuer", "fellkleidung": "Fellkleidung im Herbst und Winter", "flechten": "Körbe am Lager und beim Sammeln", "fischen": "Fischgestell am Ufer, Fischer mit Speer", "huette": "Hütten aus Ästen und Rinde", "heilkraeuter": "Kräuter-Trockengestell am Lager, Heiler mit Kräutern", "bestattung": "Grabhügel", "malerei": "Felsbilder", "toepfern": "Tontöpfe am Lager und in den Häusern", "zaehmung": "Hunde begleiten ihre Menschen", "bogen": "Pfeil und Bogen bei Jagd und Kampf", "palisade": "Palisade rund ums Dorf", "viehzucht": "Gehege mit Ziegen", "reusen": "Reusen im seichten Wasser", "weben": "Gewebte Kleidung, Webstuhl in den Häusern", "floss": "Flöße auf dem Wasser", "steinbau": "Steinhäuser", "ackerbau": "Felder rund ums Dorf", "nadel": "Knochennadel beim Nähen von Kleidung", "netz": "Fischer mit Netz, Netz-Trockengestell am Ufer", "mahlstein": "Mahlstein am Lager und in den Häusern", "einbaum": "Einbaum am Ufer und auf dem Wasser", "vorratsgrube": "Abgedeckte Vorratsgruben am Lager – je mehr Vorrat, desto mehr", "sichel": "Sichel bei der Ernte", "schmuck": "Angesehene tragen Ketten aus Muscheln und Zähnen", "saatgut": "Kräftigere Ernte (nur in den Zahlen)", "huelsen": "Felder mit Linsen und Erbsen zwischen dem Korn", "schaf": "Schafe im Gehege", "rind": "Rinder im Gehege", "schwein": "Schweine im Gehege", "lehmziegel": "Lehmhäuser mit Flachdach, Ziegel trocknen im Werkhof", "steinbeil": "Geschliffenes Beil beim Holzen und Bauen", "backofen": "Backofen im Werkhof", "bier": "Große Krüge am Lager", "spindel": "Spindel beim Weben", "webstuhl": "Leinenkleidung", "milch": "Milchkrüge am Gehege", "bewaesserung": "Kanäle an den Feldern", "hakenpflug": "Pflug auf dem Feld", "ochsen": "Ochse zieht den Pflug", "brennofen": "Brennofen mit Rauch im Werkhof", "toepferscheibe": "Töpferscheibe im Werkhof", "kupfer_haemmern": "Kupferschmuck an Angesehenen", "kupfer_guss": "Kupferbeil und Kupferspeer", "esel": "Esel im Gehege, Händler mit Packesel", "segelboot": "Schilfboot mit Segel", "rad": "Scheibenräder im Werkhof", "wagen": "Karren am Vorratshaus, Händler mit Wagen", "dattel": "Dattelpalmen an den Feldern", "zaehlsteine": "Schale mit Zählsteinen im Vorratshaus", "siegel": "Gesiegelte Kisten im Vorratshaus", "masse": "Gerechterer Handel (nur in den Zahlen)", "kalender": "Steinkreis am Dorfrand", "zahlen": "Grundlage der Schrift (nur in den Zahlen)", "rationen": "Tontafel im Vorratshaus", "tempelbau": "Stufentempel", "schrift": "Tontafeln mit Zeichen im Vorratshaus", "schule": "Kinder lernen schneller (nur in den Zahlen)", "fernhandel": "Marktstand im Dorf, Händler unterwegs", "handwerker": "Schnellere Werkstattarbeit (nur in den Zahlen)", "tempelwirtschaft": "Priesterherrschaft wird möglich", "stadtplanung": "Stadtmauer aus Ziegeln", "gerichte": "Weniger Streit (nur in der Chronik)", "heer": "Kämpfer mit Kupferhelm und Schild", "koenigtum": "Krone auf dem Haupt des Herrschers", "schuldknechtschaft": "Unfreie im Dorf (Menschen-Ansicht)"};
+const TECH_SEE = {"faustkeil": "Steinwerkzeug in der Hand beim Holzen, Bauen und Herstellen", "speer": "Speer bei Jagd und Kampf", "feuer_machen": "Das Lagerfeuer wird neu entfacht, wenn es erlischt", "kochen": "Bratspieß über dem Lagerfeuer", "fellkleidung": "Fellkleidung im Herbst und Winter", "flechten": "Körbe am Lager und beim Sammeln", "fischen": "Fischgestell am Ufer, Fischer mit Speer", "huette": "Hütten aus Ästen und Rinde", "heilkraeuter": "Kräuter-Trockengestell am Lager, Heiler mit Kräutern", "bestattung": "Grabhügel", "malerei": "Felsbilder", "toepfern": "Tontöpfe am Lager und in den Häusern", "zaehmung": "Hunde begleiten ihre Menschen", "bogen": "Pfeil und Bogen bei Jagd und Kampf", "palisade": "Palisade rund ums Dorf", "viehzucht": "Gehege mit Ziegen", "reusen": "Reusen im seichten Wasser", "weben": "Gewebte Kleidung, Webstuhl in den Häusern", "floss": "Flöße auf dem Wasser", "steinbau": "Steinhäuser", "ackerbau": "Felder rund ums Dorf", "nadel": "Knochennadel beim Nähen von Kleidung", "netz": "Fischer mit Netz, Netz-Trockengestell am Ufer", "mahlstein": "Mahlstein am Lager und in den Häusern", "einbaum": "Einbaum am Ufer und auf dem Wasser", "vorratsgrube": "Abgedeckte Vorratsgruben am Lager – je mehr Vorrat, desto mehr", "sichel": "Sichel bei der Ernte", "schmuck": "Angesehene tragen Ketten aus Muscheln und Zähnen", "saatgut": "Kräftigere Ernte (nur in den Zahlen)", "huelsen": "Felder mit Linsen und Erbsen zwischen dem Korn", "schaf": "Schafe im Gehege", "rind": "Rinder im Gehege", "schwein": "Schweine im Gehege", "lehmziegel": "Lehmhäuser mit Flachdach, Ziegel trocknen im Werkhof", "steinbeil": "Geschliffenes Beil beim Holzen und Bauen", "backofen": "Backofen im Werkhof", "bier": "Große Krüge am Lager", "spindel": "Spindel beim Weben", "webstuhl": "Leinenkleidung", "milch": "Milchkrüge am Gehege", "bewaesserung": "Kanäle an den Feldern", "hakenpflug": "Pflug auf dem Feld", "ochsen": "Ochse zieht den Pflug", "brennofen": "Brennofen mit Rauch im Werkhof", "toepferscheibe": "Töpferscheibe im Werkhof", "kupfer_haemmern": "Kupferschmuck an Angesehenen", "kupfer_guss": "Kupferbeil und Kupferspeer", "esel": "Esel im Gehege, Händler mit Packesel", "pferd": "Pferde im Gehege, Reiter auf Erkundung, Botengang und Kriegszug", "segelboot": "Schilfboot mit Segel", "rad": "Scheibenräder im Werkhof", "wagen": "Karren am Vorratshaus, Händler mit Wagen", "dattel": "Dattelpalmen an den Feldern", "zaehlsteine": "Schale mit Zählsteinen im Vorratshaus", "siegel": "Gesiegelte Kisten im Vorratshaus", "masse": "Gerechterer Handel (nur in den Zahlen)", "kalender": "Steinkreis am Dorfrand", "zahlen": "Grundlage der Schrift (nur in den Zahlen)", "rationen": "Tontafel im Vorratshaus", "tempelbau": "Stufentempel", "schrift": "Tontafeln mit Zeichen im Vorratshaus", "schule": "Kinder lernen schneller (nur in den Zahlen)", "fernhandel": "Marktstand im Dorf, Händler unterwegs", "handwerker": "Schnellere Werkstattarbeit (nur in den Zahlen)", "tempelwirtschaft": "Priesterherrschaft wird möglich", "stadtplanung": "Stadtmauer aus Ziegeln", "gerichte": "Weniger Streit (nur in der Chronik)", "heer": "Kämpfer mit Kupferhelm und Schild", "koenigtum": "Krone auf dem Haupt des Herrschers", "schuldknechtschaft": "Unfreie im Dorf (Menschen-Ansicht)"};
 for (const k in TECH_SEE) if (TECH[k]) TECH[k].see = TECH_SEE[k];
 
-const TECH_HOW = {"nadel": "bohrt ein Loch in einen Knochensplitter und fädelt eine Sehne hindurch", "netz": "knüpft Schnüre zu einem Gitter und zieht damit einen ganzen Schwarm an Land", "mahlstein": "zerreibt Körner zwischen zwei Steinen zu Mehl", "einbaum": "höhlt einen Baumstamm mit Feuer und Stein aus und setzt sich hinein", "vorratsgrube": "gräbt eine Grube, legt sie mit Rinde aus und deckt die Vorräte zu", "sichel": "setzt Feuersteinklingen in ein gebogenes Holz und schneidet damit Gras im Bündel", "schmuck": "reiht Muscheln und Zähne auf eine Schnur und trägt sie um den Hals", "saatgut": "legt die dicksten Körner beiseite, statt sie zu essen", "huelsen": "sät Linsen zwischen das Korn", "schaf": "treibt ein Mufflon in den Pferch", "rind": "zähmt ein junges Auerochsenkalb", "schwein": "lockt ein Wildschwein mit Abfällen an, bis es bleibt", "lehmziegel": "presst Lehm mit Stroh in eine Holzform und lässt ihn in der Sonne trocknen", "steinbeil": "schleift einen Stein so lange, bis seine Schneide glänzt", "backofen": "formt eine Kuppel aus Lehm und backt darin Fladen", "bier": "vergisst einen Topf mit nassem Korn – und findet ein schäumendes Getränk", "spindel": "steckt einen Stein auf einen Stab und dreht damit Garn", "webstuhl": "spannt Fäden mit Steingewichten zwischen zwei Balken", "milch": "melkt eine Ziege und lässt die Milch säuern", "bewaesserung": "gräbt einen Graben vom Fluss zum Feld", "hakenpflug": "zieht einen gebogenen Ast durch die Erde", "ochsen": "spannt einen Ochsen vor den Pflug", "brennofen": "mauert um das Feuer eine Kammer aus Lehm", "toepferscheibe": "setzt eine Scheibe auf einen Zapfen und dreht sie beim Töpfern", "kupfer_haemmern": "hämmert einen grün schimmernden Stein zu einer Perle", "kupfer_guss": "sieht flüssiges Metall aus dem Ofen rinnen und gießt es in eine Form", "esel": "lädt einem Wildesel Säcke auf", "segelboot": "spannt ein Tuch auf ein Schilfboot und lässt sich vom Wind treiben", "rad": "nimmt die Scheibe von der Töpferachse und rollt sie über den Boden", "wagen": "baut zwei Räder unter einen Kasten und spannt einen Ochsen davor", "dattel": "pflanzt Dattelkerne an den Rand des Kanals", "zaehlsteine": "formt für jeden Krug eine kleine Tonmarke", "siegel": "schnitzt ein Zeichen in einen Stein und drückt es in Ton", "masse": "legt fest, wie viel ein Krug fasst und ein Stein wiegt", "kalender": "zählt die Monde zwischen zwei Sonnenwenden", "zahlen": "bündelt die Zählsteine in Sechzigern", "rationen": "teilt jedem genau zu, was ihm zusteht", "tempelbau": "errichtet den Göttern ein Haus auf einer Plattform", "schrift": "ritzt Zeichen in eine Tontafel, die jeder lesen kann, der sie gelernt hat", "schule": "versammelt Kinder um sich und lehrt sie die Zeichen", "fernhandel": "zieht mit Waren zu fernen Sippen", "handwerker": "arbeitet nur noch in der Werkstatt und tauscht seine Ware gegen Essen", "tempelwirtschaft": "lässt die Ernte im Tempel sammeln und verteilen", "stadtplanung": "zieht Gassen und eine Mauer um die Siedlung", "gerichte": "lässt Streit vor den Alten verhandeln", "heer": "stellt Kämpfer auf, die nur für den Krieg da sind", "koenigtum": "lässt sich als König ausrufen", "schuldknechtschaft": "verlangt Arbeit für eine Schuld, die nicht bezahlt wird"};
+const TECH_HOW = {"nadel": "bohrt ein Loch in einen Knochensplitter und fädelt eine Sehne hindurch", "netz": "knüpft Schnüre zu einem Gitter und zieht damit einen ganzen Schwarm an Land", "mahlstein": "zerreibt Körner zwischen zwei Steinen zu Mehl", "einbaum": "höhlt einen Baumstamm mit Feuer und Stein aus und setzt sich hinein", "vorratsgrube": "gräbt eine Grube, legt sie mit Rinde aus und deckt die Vorräte zu", "sichel": "setzt Feuersteinklingen in ein gebogenes Holz und schneidet damit Gras im Bündel", "schmuck": "reiht Muscheln und Zähne auf eine Schnur und trägt sie um den Hals", "saatgut": "legt die dicksten Körner beiseite, statt sie zu essen", "huelsen": "sät Linsen zwischen das Korn", "schaf": "treibt ein Mufflon in den Pferch", "rind": "zähmt ein junges Auerochsenkalb", "schwein": "lockt ein Wildschwein mit Abfällen an, bis es bleibt", "lehmziegel": "presst Lehm mit Stroh in eine Holzform und lässt ihn in der Sonne trocknen", "steinbeil": "schleift einen Stein so lange, bis seine Schneide glänzt", "backofen": "formt eine Kuppel aus Lehm und backt darin Fladen", "bier": "vergisst einen Topf mit nassem Korn – und findet ein schäumendes Getränk", "spindel": "steckt einen Stein auf einen Stab und dreht damit Garn", "webstuhl": "spannt Fäden mit Steingewichten zwischen zwei Balken", "milch": "melkt eine Ziege und lässt die Milch säuern", "bewaesserung": "gräbt einen Graben vom Fluss zum Feld", "hakenpflug": "zieht einen gebogenen Ast durch die Erde", "ochsen": "spannt einen Ochsen vor den Pflug", "brennofen": "mauert um das Feuer eine Kammer aus Lehm", "toepferscheibe": "setzt eine Scheibe auf einen Zapfen und dreht sie beim Töpfern", "kupfer_haemmern": "hämmert einen grün schimmernden Stein zu einer Perle", "kupfer_guss": "sieht flüssiges Metall aus dem Ofen rinnen und gießt es in eine Form", "esel": "lädt einem Wildesel Säcke auf", "pferd": "wagt es, sich auf den Rücken eines gezähmten Pferdes zu setzen", "segelboot": "spannt ein Tuch auf ein Schilfboot und lässt sich vom Wind treiben", "rad": "nimmt die Scheibe von der Töpferachse und rollt sie über den Boden", "wagen": "baut zwei Räder unter einen Kasten und spannt einen Ochsen davor", "dattel": "pflanzt Dattelkerne an den Rand des Kanals", "zaehlsteine": "formt für jeden Krug eine kleine Tonmarke", "siegel": "schnitzt ein Zeichen in einen Stein und drückt es in Ton", "masse": "legt fest, wie viel ein Krug fasst und ein Stein wiegt", "kalender": "zählt die Monde zwischen zwei Sonnenwenden", "zahlen": "bündelt die Zählsteine in Sechzigern", "rationen": "teilt jedem genau zu, was ihm zusteht", "tempelbau": "errichtet den Göttern ein Haus auf einer Plattform", "schrift": "ritzt Zeichen in eine Tontafel, die jeder lesen kann, der sie gelernt hat", "schule": "versammelt Kinder um sich und lehrt sie die Zeichen", "fernhandel": "zieht mit Waren zu fernen Sippen", "handwerker": "arbeitet nur noch in der Werkstatt und tauscht seine Ware gegen Essen", "tempelwirtschaft": "lässt die Ernte im Tempel sammeln und verteilen", "stadtplanung": "zieht Gassen und eine Mauer um die Siedlung", "gerichte": "lässt Streit vor den Alten verhandeln", "heer": "stellt Kämpfer auf, die nur für den Krieg da sind", "koenigtum": "lässt sich als König ausrufen", "schuldknechtschaft": "verlangt Arbeit für eine Schuld, die nicht bezahlt wird"};
 for (const k in TECH_HOW) if (TECH[k]) TECH[k].how = TECH_HOW[k];
 
 // =====================================================================
@@ -6360,8 +6368,11 @@ function HMAP_T() { const v = W.tick; if (v !== TRSV) { TRSV = v; TRS = W.tribes
 </script>
 <script type="text/plain" id="workerSrc">
 // =====================================================================
-//  CIVARRIA · Simulations-Thread (läuft in einem eigenen Prozessorkern)
-//  Vor diese Datei wird core.js gesetzt.
+//  CIVARRIA · Simulations-Threads
+//  Ein Koordinator (dieser Worker) und – auf Welten mit getrennten
+//  Siedlungsgebieten – bis zu 8 Regionen-Worker, die gleichzeitig rechnen.
+//  Liegen alle Sippen nah beieinander, rechnet der Koordinator allein.
+//  Vor diese Datei wird der Simulationskern gesetzt.
 // =====================================================================
 let tps = 0, acc = 0, last = performance.now(), lastState = 0, measured = 0, mTicks = 0, mT = performance.now();
 let stateEvery = 350, pendingChron = [], pendingTiles = new Set(), terrDirty = true;
@@ -6369,58 +6380,223 @@ HOOKS.onChronicle = e => pendingChron.push(e);
 HOOKS.onTile = (x, y) => pendingTiles.add(y * C.MW + x);
 HOOKS.onTerritory = () => { terrDirty = true; };
 const HEAVY = { t: 1, clay: 1, flint: 1, foot: 1, chron: 1, bushes: 1 };
-let lastBf = 0;
+let lastBf = 0, ROLE = 'main', SRC = null, CORES = 1, SH = null;
+const LINK = 120; // Sippen näher als das gehören in dieselbe Region
 function liteW() { const o = {}; for (const k in W) if (!HEAVY[k]) o[k] = W[k]; return o; }
+function bushF() { const bf = new Uint8Array(W.bushes.length); for (let i = 0; i < bf.length; i++) bf[i] = W.bushes[i].gone ? 255 : Math.max(0, Math.min(254, Math.round(W.bushes[i].f))); return bf; }
+function tileList() { const tiles = []; for (const i of pendingTiles) tiles.push([i, W.t[i], W.cut[i] || 0, W.path[i] || 0, W.flint[i]]); pendingTiles.clear(); return tiles; }
 function sendInit() {
   pendingChron = []; pendingTiles.clear();
   postMessage({ type: 'init', W: liteW(), t: W.t, clay: W.clay, flint: W.flint, chron: W.chron, own: OWN, bushes: W.bushes.map(b => ({ id: b.id, x: b.x, y: b.y, f: b.f, max: b.max, gone: b.gone })) });
   terrDirty = false;
 }
 function sendState() {
-  const tiles = [];
-  for (const i of pendingTiles) tiles.push([i, W.t[i], W.cut[i] || 0, W.path[i] || 0, W.flint[i]]);
-  pendingTiles.clear();
+  const tiles = tileList();
   let bf = null; const now = performance.now();
-  if (now - lastBf > 1500) { lastBf = now; bf = new Uint8Array(W.bushes.length); for (let i = 0; i < bf.length; i++) bf[i] = W.bushes[i].gone ? 255 : Math.max(0, Math.min(254, Math.round(W.bushes[i].f))); }
-  postMessage({ type: 'state', W: liteW(), chron: pendingChron.splice(0), tiles, own: terrDirty ? OWN : null, tps: measured, bf });
+  if (now - lastBf > 1500) { lastBf = now; bf = bushF(); }
+  postMessage({ type: 'state', W: liteW(), chron: pendingChron.splice(0), tiles, own: terrDirty ? OWN : null, tps: measured, bf, cores: 1 });
   terrDirty = false;
 }
-function sendFrame() {
-  const n = W.npcs, a = W.animals;
-  const P = new Float32Array(n.length * 3), A = new Float32Array(a.length * 3);
+function posArrays() {
+  const n = W.npcs, a = W.animals, P = new Float32Array(n.length * 3), A = new Float32Array(a.length * 3);
   for (let i = 0; i < n.length; i++) { P[i * 3] = n[i].id; P[i * 3 + 1] = n[i].x; P[i * 3 + 2] = n[i].y; }
   for (let i = 0; i < a.length; i++) { A[i * 3] = a[i].id; A[i * 3 + 1] = a[i].x; A[i * 3 + 2] = a[i].y; }
-  postMessage({ type: 'frame', tick: W.tick, frac: acc % 1, P, A }, [P.buffer, A.buffer]);
+  return [P, A];
 }
+function sendFrame() { const [P, A] = posArrays(); postMessage({ type: 'frame', tick: W.tick, frac: acc % 1, P, A }, [P.buffer, A.buffer]); }
+
+// ---------------------------------------------------------------- Regionen planen
+// Sippen, die sich erreichen können (Handel, Besuche, Überfälle), rechnen in derselben Region.
+function planShards(tribes) {
+  if (CORES < 2 || !SRC) return null;
+  const al = tribes.filter(T => T.alive); if (al.length < 2) return null;
+  const par = new Map(al.map(T => [T.id, T.id])), find = x => { while (par.get(x) !== x) { par.set(x, par.get(par.get(x))); x = par.get(x); } return x; };
+  for (let i = 0; i < al.length; i++) for (let j = i + 1; j < al.length; j++) if (Math.hypot(al[i].cx - al[j].cx, al[i].cy - al[j].cy) < LINK) par.set(find(al[i].id), find(al[j].id));
+  const cl = new Map(); for (const T of al) { const r = find(T.id); if (!cl.has(r)) cl.set(r, { ids: [], pop: 0 }); const c = cl.get(r); c.ids.push(T.id); c.pop += T.members.length + 5; }
+  const clusters = [...cl.values()].sort((a, b) => b.pop - a.pop);
+  if (clusters.length < 2) return null;
+  const K = Math.min(CORES, clusters.length), bins = Array.from({ length: K }, () => ({ ids: new Set(), pop: 0 }));
+  for (const c of clusters) { const b = bins.reduce((m, x) => x.pop < m.pop ? x : m); c.ids.forEach(id => b.ids.add(id)); b.pop += c.pop; }
+  const total = bins.reduce((a, b) => a + b.pop, 0); if (Math.max(...bins.map(b => b.pop)) > total * 0.85) return null; // eine Region dominiert – lohnt nicht
+  return bins.map(b => b.ids);
+}
+// Die vollständige Welt W in Regionen zerlegen
+function splitWorld(groups) {
+  const gi = new Map(); groups.forEach((g, s) => g.forEach(id => gi.set(id, s)));
+  const centers = W.tribes.filter(T => gi.has(T.id)).map(T => [T.cx, T.cy, gi.get(T.id)]);
+  const owner = (x, y) => { let b = 0, bd = 1e18; for (const c of centers) { const d = (c[0] - x) ** 2 + (c[1] - y) ** 2; if (d < bd) { bd = d; b = c[2]; } } return b; };
+  const parts = [], bushIdx = groups.map(() => []);
+  W.bushes.forEach((b, i) => bushIdx[owner(b.x, b.y)].push(i));
+  const FULL = W;
+  for (let s = 0; s < groups.length; s++) {
+    const g = groups[s], S = Object.assign({}, FULL);
+    S.npcs = FULL.npcs.filter(n => g.has(n.tribe));
+    S.tribes = FULL.tribes.filter(T => g.has(T.id) || (s === 0 && !gi.has(T.id)));
+    S.animals = FULL.animals.filter(a => { const o = a.tribe && gi.has(a.tribe) ? gi.get(a.tribe) : a.owner && NPC.get(a.owner) ? (gi.get(NPC.get(a.owner).tribe) ?? 0) : owner(a.x, a.y); return o === s; });
+    S.bushes = bushIdx[s].map(i => FULL.bushes[i]);
+    const fl = {}; for (const k in FULL.fields) if (g.has(FULL.fields[k].tr)) fl[k] = FULL.fields[k]; S.fields = fl;
+    S.raids = FULL.raids.filter(r => g.has(r.from) && g.has(r.to));
+    S.fires = FULL.fires.filter(f => owner(f.x, f.y) === s);
+    S.graves = FULL.graves.filter(f => owner(f.x, f.y) === s);
+    S.paintAll = (FULL.paintAll || []).filter(f => owner(f.x, f.y) === s);
+    S.chron = []; S.dead = []; S.stats = [];
+    S.nextId = FULL.nextId + s * 50000000;
+    W = S; parts.push(serialize()); W = FULL;
+  }
+  return { parts, bushIdx };
+}
+// Regionen wieder zu einer Welt zusammenfügen (Speichern, Neuaufteilung)
+function mergeDumps(strs) {
+  const D = strs.map(s => JSON.parse(s)), M = Object.assign({}, D[0]);
+  const cat = k => D.flatMap(d => d[k] || []);
+  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'paintAll']) M[k] = cat(k);
+  M.bushes = cat('bushes').sort((a, b) => a.id - b.id);
+  M.dead = SH.master.dead.concat(cat('dead'));
+  for (const k of ['fields', 'res', 'cut', 'path', 'foot', 'beliefs', 'cults']) { M[k] = {}; for (const d of D) Object.assign(M[k], d[k] || {}); }
+  M.discovered = {}; for (const d of D) for (const k in d.discovered) if (!M.discovered[k] || d.discovered[k].t < M.discovered[k].t) M.discovered[k] = d.discovered[k];
+  M.nextId = Math.max(...D.map(d => d.nextId)); M.tick = Math.max(...D.map(d => d.tick));
+  M.chron = SH.master.chron; M.stats = SH.master.stats;
+  M.t = SH.master.t.join(''); M.flint = SH.master.flint.join('');
+  const clay = SH.clay0.slice(); for (const d of D) { const c = d.clay; for (let i = 0; i < clay.length; i++) if (+c[i] !== SH.clay0[i]) clay[i] = +c[i]; } M.clay = clay.join('');
+  return JSON.stringify(M);
+}
+
+// ---------------------------------------------------------------- Koordinator: Regionen starten, takten, zusammenführen
+function startShards(groups) {
+  const { parts, bushIdx } = splitWorld(groups);
+  const url = URL.createObjectURL(new Blob([SRC], { type: 'text/javascript' }));
+  SH = { list: [], bushIdx, master: { t: W.t.slice(), flint: W.flint.slice(), chron: W.chron, dead: W.dead, stats: W.stats, meta: liteW() }, clay0: W.clay.slice(), own: [], want: 2, npcS: new Map(), triS: new Map(), year: Math.floor(W.tick / C.TPY) };
+  groups.forEach((g, s) => g.forEach(id => SH.triS.set(id, s)));
+  for (const n of W.npcs) SH.npcS.set(n.id, SH.triS.get(n.tribe) ?? 0);
+  parts.forEach((str, s) => {
+    const w = new Worker(url); w.onmessage = e => onShard(s, e.data); w.onerror = e => postMessage({ type: 'error', msg: 'Region ' + s + ': ' + e.message });
+    w.postMessage({ cmd: 'shardInit', str }); SH.list.push({ w, busy: false, res: null });
+  });
+  W = null; // die Welt lebt jetzt in den Regionen
+}
+function stopShards() { if (!SH) return; for (const s of SH.list) s.w.terminate(); SH = null; }
+function shardRound(now) {
+  if (SH.dumping || SH.list.some(s => s.busy)) return;
+  const dt = Math.min(0.25, (now - (SH.lastT || now)) / 1000); SH.lastT = now;
+  acc += dt * tps; let n = Math.min(Math.floor(acc), SH.want); acc -= n; if (acc > SH.want * 3) acc = SH.want * 3;
+  const lite = now - lastState > stateEvery, bf = now - lastBf > 1500;
+  if (lite) lastState = now; if (bf) lastBf = now;
+  SH.t0 = performance.now(); SH.n = n; SH.lite = lite;
+  for (const s of SH.list) { s.busy = true; s.res = null; s.w.postMessage({ cmd: 'run', n, lite, bf }); }
+}
+function onShard(s, m) {
+  if (!SH) return;
+  if (m.type === 'reply' || m.type === 'error') { postMessage(m); return; }
+  if (m.type === 'dump') { SH.dumps[s] = m.str; if (SH.dumps.filter(Boolean).length === SH.list.length) { const str = mergeDumps(SH.dumps), done = SH.onDump; SH.dumping = false; SH.dumps = null; done(str); } return; }
+  if (m.type !== 'ran') return;
+  const sh = SH.list[s]; sh.busy = false; sh.res = m;
+  if (SH.list.some(x => x.busy)) return;
+  // alle Regionen sind fertig: Bild und Zustand zusammensetzen
+  const R = SH.list.map(x => x.res), ms = performance.now() - SH.t0;
+  if (SH.n > 0) { SH.want = clamp(Math.round(SH.n * 22 / Math.max(1, ms)), 1, 400); mTicks += SH.n; }
+  const tick = R[0].tick, nP = R.reduce((a, r) => a + r.P.length, 0), nA = R.reduce((a, r) => a + r.A.length, 0);
+  const P = new Float32Array(nP), A = new Float32Array(nA); let o = 0, q = 0; for (const r of R) { P.set(r.P, o); o += r.P.length; A.set(r.A, q); q += r.A.length; }
+  postMessage({ type: 'frame', tick, frac: acc % 1, P, A }, [P.buffer, A.buffer]);
+  for (const r of R) { for (const e of r.chron) { SH.master.chron.push(e); pendingChron.push(e); } for (const t of r.tiles) { SH.master.t[t[0]] = t[1]; SH.master.flint[t[0]] = t[4]; pendingTiles.add(t); } }
+  if (SH.master.chron.length > 6000) SH.master.chron.splice(0, 1000);
+  let ownDirty = false; R.forEach((r, i) => { if (r.own) { SH.own[i] = r.own; ownDirty = true; } });
+  if (SH.lite) postMergedState(R, ownDirty); else if (ownDirty) SH.ownPending = true;
+  // einmal im Spieljahr prüfen, ob die Aufteilung noch passt
+  const y = Math.floor(tick / C.TPY); if (y !== SH.year) { SH.year = y; if (SH.lastLite) checkRegions(); }
+}
+function postMergedState(R, ownDirty) {
+  const L = R.map(r => r.lite), M = Object.assign({}, SH.master.meta, L[0]);
+  for (const k of ['npcs', 'tribes', 'animals', 'raids', 'fires', 'graves', 'paintAll', 'dead']) M[k] = L.flatMap(l => l[k] || []);
+  for (const k of ['fields', 'res', 'cut', 'path', 'beliefs', 'cults']) { M[k] = {}; for (const l of L) Object.assign(M[k], l[k] || {}); }
+  M.discovered = {}; for (const l of L) for (const k in l.discovered) if (!M.discovered[k] || l.discovered[k].t < M.discovered[k].t) M.discovered[k] = l.discovered[k];
+  // Jahresstatistik: Regionen zusammenzählen
+  const ys = new Map(SH.master.stats.map(s => [s.y, s]));
+  L.forEach((l, i) => { for (const s of (l.stats || [])) { const key = s.y; let m = ys.get(key); if (!m || !m._r) { m = { y: s.y, pop: 0, deer: 0, tribes: {}, know: 0, _r: {} }; ys.set(key, m); } if (!m._r[i]) { m._r[i] = 1; m.pop += s.pop; m.deer += s.deer; Object.assign(m.tribes, s.tribes); m.know = Math.max(m.know, s.know); } } });
+  M.stats = [...ys.values()].sort((a, b) => a.y - b.y);
+  SH.master.stats.length = 0; for (const s of M.stats) SH.master.stats.push(s);
+  SH.npcS.clear(); SH.triS.clear(); L.forEach((l, s) => { for (const n of l.npcs) SH.npcS.set(n.id, s); for (const T of l.tribes) SH.triS.set(T.id, s); });
+  SH.lastLite = M;
+  let own = null; if ((ownDirty || SH.ownPending) && SH.own.length) { SH.ownPending = false; own = new Int32Array(SH.own.find(Boolean).length); for (const o of SH.own) if (o) for (let i = 0; i < own.length; i++) if (o[i]) own[i] = o[i]; }
+  let bf = null; if (R[0].bf) { bf = new Uint8Array(SH.bushIdx.reduce((a, x) => a + x.length, 0)); R.forEach((r, s) => { const idx = SH.bushIdx[s]; for (let i = 0; i < idx.length; i++) bf[idx[i]] = r.bf[i]; }); }
+  const tiles = [...pendingTiles]; pendingTiles.clear();
+  postMessage({ type: 'state', W: M, chron: pendingChron.splice(0), tiles, own, tps: measured, bf, cores: SH.list.length });
+}
+function dumpAll(cb) { SH.dumping = true; SH.dumps = []; SH.onDump = cb; for (const s of SH.list) s.w.postMessage({ cmd: 'dump' }); }
+function waitIdle(fn) { if (!SH || !SH.list.some(s => s.busy)) fn(); else setTimeout(() => waitIdle(fn), 5); }
+// Kommen sich Sippen verschiedener Regionen nahe, wird die Welt neu aufgeteilt
+function checkRegions() {
+  const T = SH.lastLite.tribes.filter(t => t.alive);
+  for (let i = 0; i < T.length; i++) for (let j = i + 1; j < T.length; j++)
+    if (SH.triS.get(T[i].id) !== SH.triS.get(T[j].id) && Math.hypot(T[i].cx - T[j].cx, T[i].cy - T[j].cy) < LINK) { regroup(); return; }
+}
+function regroup() { waitIdle(() => dumpAll(str => { stopShards(); deserialize(str); decideMode(); })); }
+// Allein oder in Regionen rechnen?
+function decideMode() { const g = planShards(W.tribes); if (g) startShards(g); }
+
+// ---------------------------------------------------------------- Takt
 setInterval(() => {
-  const now = performance.now(), dt = Math.min(0.25, (now - last) / 1000); last = now;
+  const now = performance.now();
+  if (ROLE !== 'main') return;
+  if (now - mT > 1000) { measured = mTicks * 1000 / (now - mT); mTicks = 0; mT = now; }
+  if (SH) { shardRound(now); return; }
+  const dt = Math.min(0.25, (now - last) / 1000); last = now;
   if (!W) return;
   if (tps > 0) {
     acc += dt * tps;
     const t0 = performance.now();
     while (acc >= 1) { stepWorld(); acc -= 1; mTicks++; if (performance.now() - t0 > 14) { acc = Math.min(acc, 2); break; } }
+    // einmal im Jahr: lohnt sich jetzt eine Aufteilung auf mehrere Kerne?
+    const y = Math.floor(W.tick / C.TPY); if (y !== W._yc) { W._yc = y; if (CORES > 1 && SRC) { const g = planShards(W.tribes); if (g) { sendState(); startShards(g); return; } } }
   }
-  if (now - mT > 1000) { measured = mTicks * 1000 / (now - mT); mTicks = 0; mT = now; }
   sendFrame();
   if (now - lastState > stateEvery) { lastState = now; const t0 = performance.now(); sendState(); const c = performance.now() - t0; stateEvery = clamp(c * 14, 350, 2500); }
 }, 16);
 
+// ---------------------------------------------------------------- Befehle
+function localCmd(m) {
+  switch (m.cmd) {
+    case 'progress': W.progress = m.v; return;
+    case 'value': { const n = NPC.get(m.id); if (n && n.pv) { n.pv[m.i] = m.v; if (m.memo) memo(n, m.memo); } return; }
+    case 'trait': { const n = NPC.get(m.id); if (n) { n.tr[m.k] = m.v; if (m.memo) memo(n, m.memo); } return; }
+    case 'whisper': { const n = NPC.get(m.id); return n ? whisper(n, m.kind) : false; }
+    case 'whisperLeader': { const n = NPC.get(m.id); return n ? whisperLeader(n, m.kind, m.target) : 'Diese Person lebt nicht mehr.'; }
+    case 'grant': { const T = TRIBE.get(m.tribe); if (T) { for (const id of T.members) { const n = NPC.get(id); if (n) for (const k of m.know) n.know[k] = 1; } updateTribeKnow(T); if (m.bld) T.bld = m.bld; if (m.mud) for (const h of T.huts) h.mud = true; } return; }
+    case 'steps': for (let i = 0; i < m.n; i++) stepWorld(); return;
+  }
+}
 self.onmessage = e => {
   const m = e.data;
   try {
-    switch (m.cmd) {
-      case 'new': newWorld(m.seed, { pop: m.pop, tribes: m.tribes, size: m.size }); acc = 0; sendInit(); break;
-      case 'load': deserialize(m.str); acc = 0; sendInit(); break;
-      case 'save': postMessage({ type: 'reply', rid: m.rid, result: serialize() }); break;
-      case 'speed': tps = m.tps; break;
-      case 'progress': W.progress = m.v; break;
-      case 'value': { const n = NPC.get(m.id); if (n && n.pv) { n.pv[m.i] = m.v; if (m.memo) memo(n, m.memo); } break; }
-      case 'trait': { const n = NPC.get(m.id); if (n) { n.tr[m.k] = m.v; if (m.memo) memo(n, m.memo); } break; }
-      case 'whisper': { const n = NPC.get(m.id); const r = n ? whisper(n, m.kind) : false; postMessage({ type: 'reply', rid: m.rid, result: r }); sendState(); break; }
-      case 'whisperLeader': { const n = NPC.get(m.id); const r = n ? whisperLeader(n, m.kind, m.target) : 'Diese Person lebt nicht mehr.'; postMessage({ type: 'reply', rid: m.rid, result: r }); sendState(); break; }
-      case 'grant': { const T = TRIBE.get(m.tribe); if (T) { for (const id of T.members) { const n = NPC.get(id); if (n) for (const k of m.know) n.know[k] = 1; } updateTribeKnow(T); if (m.bld) T.bld = m.bld; if (m.mud) for (const h of T.huts) h.mud = true; } sendState(); break; }
-      case 'steps': for (let i = 0; i < m.n; i++) stepWorld(); sendState(); break;
+    // ---- als Region
+    if (m.cmd === 'shardInit') { ROLE = 'shard'; deserialize(m.str); pendingChron = []; pendingTiles.clear(); terrDirty = true; return; }
+    if (ROLE === 'shard') {
+      if (m.cmd === 'run') {
+        for (let i = 0; i < m.n; i++) stepWorld();
+        const [P, A] = posArrays(), out = { type: 'ran', tick: W.tick, P, A, chron: pendingChron.splice(0), tiles: tileList(), own: terrDirty ? OWN.slice() : null, lite: m.lite ? liteW() : null, bf: m.bf ? bushF() : null };
+        terrDirty = false;
+        postMessage(out, [P.buffer, A.buffer]);
+      } else if (m.cmd === 'dump') postMessage({ type: 'dump', str: serialize() });
+      else { const r = localCmd(m); if (m.rid !== undefined) postMessage({ type: 'reply', rid: m.rid, result: r }); }
+      return;
     }
+    // ---- als Koordinator
+    switch (m.cmd) {
+      case 'src': SRC = m.src; CORES = Math.max(1, Math.min(8, m.cores || 1)); return;
+      case 'new': stopShards(); newWorld(m.seed, { pop: m.pop, tribes: m.tribes, size: m.size }); acc = 0; W._yc = 0; sendInit(); decideMode(); return;
+      case 'load': stopShards(); deserialize(m.str); acc = 0; W._yc = Math.floor(W.tick / C.TPY); sendInit(); decideMode(); return;
+      case 'speed': tps = m.tps; return;
+      case 'save': if (SH) waitIdle(() => dumpAll(str => postMessage({ type: 'reply', rid: m.rid, result: str }))); else postMessage({ type: 'reply', rid: m.rid, result: serialize() }); return;
+    }
+    if (SH) { // an die zuständige Region weiterreichen
+      if (m.cmd === 'progress') { for (const s of SH.list) s.w.postMessage(m); return; }
+      const s = m.id !== undefined ? SH.npcS.get(m.id) : m.tribe !== undefined ? SH.triS.get(m.tribe) : 0;
+      if (s === undefined) { if (m.rid !== undefined) postMessage({ type: 'reply', rid: m.rid, result: m.cmd === 'whisperLeader' ? 'Diese Person lebt nicht mehr.' : false }); return; }
+      waitIdle(() => SH.list[s].w.postMessage(m));
+      return;
+    }
+    const r = localCmd(m);
+    if (m.rid !== undefined) postMessage({ type: 'reply', rid: m.rid, result: r });
+    if (m.cmd === 'whisper' || m.cmd === 'whisperLeader' || m.cmd === 'grant' || m.cmd === 'steps') sendState();
   } catch (err) { postMessage({ type: 'error', msg: String(err && err.stack || err) }); }
 };
 
@@ -6637,7 +6813,9 @@ const ANIM_PX = {
   pig: ['..............o.', '..oooooooooo.opo', '.opppppppppppppo', 'oppPppppppppppeo', 'opppppppppppppsso', '.oppppppppppppso', '..oPPoooooPPoo..', '..opo.....opo...'],
   donkey: ['.............o.o..', '............ogogo.', '............oggo..', '..ooooooooooogggo.', '.ogggggggggkkggego', 'ogGggggggggggggggo', 'ogglllllllllgo.olo', '.oggggggggggo..oo.', '..oGo.....oGo.....', '..oGo.....oGo.....', '..oko.....oko.....'],
 };
+ANIM_PX.horse = ['...............oo.', '..............okgo', '.............okggo', '..ooooooooooookgego', '.okggggggggggggggo', 'okgGggggggggggggo.', 'oggggggggggggggo..', '.ogggggggggggo....', '..oGo..oGo.oGo.oGo', '..oGo..oGo.oGo.oGo', '..oko..oko.oko.oko'];
 const ANIM_PAL = {
+  horse: [{ o: '#2a1e1a', g: '#8a5a34', G: '#6a4424', k: '#2a1e16', e: '#000' }, { o: '#2a1e1a', g: '#a07a50', G: '#806040', k: '#4a3a2a', e: '#000' }],
   sheep: [{ o: '#2a1e1a', w: '#eeeae0', W: '#d4cfc2', k: '#3a3330', e: '#000' }, { o: '#2a1e1a', w: '#8a5a34', W: '#6a4224', k: '#3a2a20', e: '#000' }],
   cattle: [{ o: '#2a1e1a', c: '#a0683c', C: '#7a4a28', h: '#e8dcc0', n: '#d99a8a', e: '#000', f: '#2a1e1a' }, { o: '#1a1410', c: '#3a2c24', C: '#2a201a', h: '#f0e6d0', n: '#4a3a30', e: '#000', f: '#1a1410' }],
   pig: [{ o: '#2a1e1a', p: '#e8a8a0', P: '#c88880', s: '#d07070', e: '#000' }, { o: '#1a1410', p: '#5a4636', P: '#3e3026', s: '#2a201a', e: '#000' }],
@@ -7348,6 +7526,7 @@ function drawNpc(n, px, py, selected, detail) {
   const fr = spriteFrame(n, moving, FT);
   const dir = n.face === 'side' ? (n.flip ? -1 : 1) : (n.dir || 1);
   ctx.save(); ctx.translate(px, py); ctx.scale(sc, sc);
+  if (T && detail && riding(n, T)) { const hc = animalCanvas('horse'); ctx.save(); if (n.face === 'side' ? n.flip : (n.dir || 1) < 0) ctx.scale(-1, 1); ctx.drawImage(hc, -hc.width / 2, -hc.height + 4); ctx.restore(); ctx.translate(0, -7); }
   // Sippenfarbe als Fleck unter den Füßen
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(0, 2.5, 5, 2, 0, 0, 7); ctx.fill();
   if (T && detail) { ctx.strokeStyle = T.col; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(0, 2.5, 5, 2, 0, 0, 7); ctx.stroke(); }
@@ -7440,7 +7619,7 @@ function updateTop() {
   const h = hourNow(), hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
   $('date').innerHTML = `<b>Jahr ${yearNow()}</b> · ${SEASONS[seasonNow()]} · Tag ${dayInSeason(dayNum()) + 1}${seasonNow() === 3 && W.hardWinter ? ' · <span style="color:#9fc3ff">strenger Winter</span>' : ''} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   const alive = W.tribes.filter(t => t.alive).length;
-  const want = TPS * SPEEDS[ui.speed]; $('popinfo').textContent = `${W.npcs.length} Menschen · ${alive} Sippen${ui.speed >= 5 && SIM.tps < want * 0.8 ? ` · Simulation am Limit (${Math.round(SIM.tps / TPS)}×)` : ''}`;
+  const want = TPS * SPEEDS[ui.speed]; $('popinfo').textContent = `${W.npcs.length} Menschen · ${alive} Sippen${SIM.cores > 1 ? ` · ${SIM.cores} Regionen parallel` : ''}${ui.speed >= 5 && SIM.tps < want * 0.8 ? ` · Simulation am Limit (${Math.round(SIM.tps / TPS)}×)` : ''}`;
 }
 
 // ---------------------------------------------------------------- Chronik & Toasts
@@ -7768,6 +7947,7 @@ function simStart() {
     SIM.worker.onerror = e => { console.error('Simulation:', e.message); if (!SIM.ready) simInline(src); };
   } catch (err) { simInline(src); return; }
   SIM.worker.onmessage = onSim;
+  SIM.worker.postMessage({ cmd: 'src', src, cores: Math.min(8, Math.max(1, (navigator.hardwareConcurrency || 4) - 2)) });
   setTimeout(() => { if (!SIM.ready && !SIM.inline) simInline(src); }, 6000);
 }
 // Ersatz, falls die Umgebung keine eigenen Threads erlaubt: gleiche Simulation, eigener Namensraum, aber im Hauptthread
@@ -7807,7 +7987,7 @@ function onSim(e) {
     if (m.own) { OWN_M = m.own; OWN = m.own; buildTerritory(); }
     for (const ev of m.chron) { CHRON.push(ev); HOOKS.onChronicle(ev); }
     if (CHRON.length > 4000) CHRON.splice(0, 500);
-    SIM.tps = m.tps;
+    SIM.tps = m.tps; SIM.cores = m.cores || 1;
   } else if (m.type === 'init') {
     T_ARR = m.t; CLAY = m.clay; FLINT = m.flint; CHRON = m.chron; OWN_M = m.own; BUSHES = m.bushes; W = null; SIM.cur = null;
     adoptW(m.W); BGRID = new Map(); for (const b of BUSHES) { const k = ((b.x / 8) | 0) + ',' + ((b.y / 8) | 0); if (!BGRID.has(k)) BGRID.set(k, []); BGRID.get(k).push(b); } SIM.ready = true; afterLoad(); simCmd('speed', { tps: TPS * SPEEDS[ui.speed] });

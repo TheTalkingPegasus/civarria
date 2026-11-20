@@ -61,7 +61,7 @@ const TECH = {
   zaehmung:    { name: 'Tierzähmung', icon: '🐕', req: ['speer'], D: 10500, ctx: { wolfnear: 1, experiment: 0.3 }, desc: 'Wölfe gewöhnen sich an Menschen und werden zu Jagdgefährten.' },
   bogen:       { name: 'Pfeil & Bogen', icon: '🏹', req: ['speer', 'flechten'], D: 9000, ctx: { hunt: 0.8, experiment: 0.5 }, desc: 'Eine gespannte Sehne schleudert Pfeile weit und genau. Jagd und Kampf verändern sich.' },
   palisade:    { name: 'Palisaden', icon: '🪵', req: ['faustkeil', 'huette'], D: 7500, ctx: { raided: 3, build: 0.4, experiment: 0.3 }, desc: 'Angespitzte Pfähle im Kreis um das Lager. Schutz vor Räubern, Feinden und Wölfen.' },
-  viehzucht:   { name: 'Viehzucht', icon: '🐐', req: ['flechten', 'faustkeil'], D: 8500, ctx: { goatnear: 1, experiment: 0.3 }, desc: 'Wildziegen einfangen, einpferchen und vermehren. Milch und Fleisch ohne Jagd.' },
+  viehzucht:   { name: 'Viehzucht', icon: '🐐', req: ['flechten', 'faustkeil'], D: 6500, ctx: { goatnear: 1.5, experiment: 0.3 }, desc: 'Wildziegen einfangen, einpferchen und vermehren. Milch und Fleisch ohne Jagd.' },
   reusen:      { name: 'Fischreusen', icon: '🪤', req: ['fischen', 'flechten'], D: 5000, ctx: { water: 0.8, experiment: 0.4 }, desc: 'Geflochtene Fallen im seichten Wasser fangen Fische, während man schläft.' },
   weben:       { name: 'Weben', icon: '🧶', req: ['flechten', 'viehzucht'], D: 9000, ctx: { goatnear: 0.3, gather: 0.15, rest: 0.3, experiment: 0.6 }, desc: 'Ziegenhaar und Pflanzenfasern zu Fäden drehen und zu Stoff verweben. Leichte, warme Kleidung.' },
   floss:       { name: 'Floß', icon: '🛶', req: ['flechten', 'faustkeil'], D: 7000, ctx: { waterblock: 1, water: 0.3, experiment: 0.4 }, desc: 'Baumstämme zusammenbinden und über Flüsse und Seen setzen.' },
@@ -741,7 +741,7 @@ function startAct(n, o) {
 
 function stepNpc(n) {
   const T = tribeOf(n), a = n.act, age = ageY(n);
-  const speed = (age < 12 ? 0.7 : 1) * (n.injured > 0 ? 0.5 : 1) * (n.sick > 0 ? 0.7 : 1);
+  const speed = (age < 12 ? 0.7 : 1) * (n.injured > 0 ? 0.5 : 1) * (n.sick > 0 ? 0.7 : 1) * (riding(n, T) ? 1.7 : 1);
   // Bedürfnisse
   n.hunger = Math.min(100, n.hunger + (seasonNow() === 3 ? 0.72 : 0.9));
   if (!(a && a.type === 'sleep' && a.stage === 1)) n.energy = Math.max(0, n.energy - 1.35);
@@ -2191,7 +2191,7 @@ function dailyTick() {
     const deer = W.animals.filter(a => a.k === 'deer');
     const cap = 450; let born = 0;
     for (const d of deer) if (deer.length + born < cap && rnd() < 0.42) { W.animals.push({ id: W.nextId++, k: 'deer', x: d.x, y: d.y, tx: d.x, ty: d.y, born: W.tick }); born++; }
-    const horses = W.animals.filter(a => a.k === 'horse'); for (const h of horses) if (horses.length < 90 && rnd() < 0.2) W.animals.push({ id: W.nextId++, k: 'horse', x: h.x, y: h.y, tx: h.x, ty: h.y, born: W.tick });
+    const horses = W.animals.filter(a => a.k === 'horse' && !a.tribe); for (const h of horses) if (horses.length < 90 && rnd() < 0.2) W.animals.push({ id: W.nextId++, k: 'horse', x: h.x, y: h.y, tx: h.x, ty: h.y, born: W.tick });
     const AR = C.MW * C.MH / 108000;
     for (const K in HERD_K) { const all = W.animals.filter(a => a.k === K), cnt = {}; let wild = 0; for (const g of all) { if (g.tribe) cnt[g.tribe] = (cnt[g.tribe] || 0) + 1; else wild++; }
       const cap = (K === 'goat' ? 90 : 50) * AR, pb = { goat: 0.55, sheep: 0.55, cattle: 0.32, pig: 0.75, donkey: 0.3 }[K];

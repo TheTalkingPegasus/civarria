@@ -666,6 +666,7 @@ function drawNpc(n, px, py, selected, detail) {
   const fr = spriteFrame(n, moving, FT);
   const dir = n.face === 'side' ? (n.flip ? -1 : 1) : (n.dir || 1);
   ctx.save(); ctx.translate(px, py); ctx.scale(sc, sc);
+  if (T && detail && riding(n, T)) { const hc = animalCanvas('horse'); ctx.save(); if (n.face === 'side' ? n.flip : (n.dir || 1) < 0) ctx.scale(-1, 1); ctx.drawImage(hc, -hc.width / 2, -hc.height + 4); ctx.restore(); ctx.translate(0, -7); }
   // Sippenfarbe als Fleck unter den Füßen
   ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(0, 2.5, 5, 2, 0, 0, 7); ctx.fill();
   if (T && detail) { ctx.strokeStyle = T.col; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(0, 2.5, 5, 2, 0, 0, 7); ctx.stroke(); }
@@ -758,7 +759,7 @@ function updateTop() {
   const h = hourNow(), hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
   $('date').innerHTML = `<b>Jahr ${yearNow()}</b> · ${SEASONS[seasonNow()]} · Tag ${dayInSeason(dayNum()) + 1}${seasonNow() === 3 && W.hardWinter ? ' · <span style="color:#9fc3ff">strenger Winter</span>' : ''} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   const alive = W.tribes.filter(t => t.alive).length;
-  const want = TPS * SPEEDS[ui.speed]; $('popinfo').textContent = `${W.npcs.length} Menschen · ${alive} Sippen${ui.speed >= 5 && SIM.tps < want * 0.8 ? ` · Simulation am Limit (${Math.round(SIM.tps / TPS)}×)` : ''}`;
+  const want = TPS * SPEEDS[ui.speed]; $('popinfo').textContent = `${W.npcs.length} Menschen · ${alive} Sippen${SIM.cores > 1 ? ` · ${SIM.cores} Regionen parallel` : ''}${ui.speed >= 5 && SIM.tps < want * 0.8 ? ` · Simulation am Limit (${Math.round(SIM.tps / TPS)}×)` : ''}`;
 }
 
 // ---------------------------------------------------------------- Chronik & Toasts
@@ -1086,6 +1087,7 @@ function simStart() {
     SIM.worker.onerror = e => { console.error('Simulation:', e.message); if (!SIM.ready) simInline(src); };
   } catch (err) { simInline(src); return; }
   SIM.worker.onmessage = onSim;
+  SIM.worker.postMessage({ cmd: 'src', src, cores: Math.min(8, Math.max(1, (navigator.hardwareConcurrency || 4) - 2)) });
   setTimeout(() => { if (!SIM.ready && !SIM.inline) simInline(src); }, 6000);
 }
 // Ersatz, falls die Umgebung keine eigenen Threads erlaubt: gleiche Simulation, eigener Namensraum, aber im Hauptthread
@@ -1125,7 +1127,7 @@ function onSim(e) {
     if (m.own) { OWN_M = m.own; OWN = m.own; buildTerritory(); }
     for (const ev of m.chron) { CHRON.push(ev); HOOKS.onChronicle(ev); }
     if (CHRON.length > 4000) CHRON.splice(0, 500);
-    SIM.tps = m.tps;
+    SIM.tps = m.tps; SIM.cores = m.cores || 1;
   } else if (m.type === 'init') {
     T_ARR = m.t; CLAY = m.clay; FLINT = m.flint; CHRON = m.chron; OWN_M = m.own; BUSHES = m.bushes; W = null; SIM.cur = null;
     adoptW(m.W); BGRID = new Map(); for (const b of BUSHES) { const k = ((b.x / 8) | 0) + ',' + ((b.y / 8) | 0); if (!BGRID.has(k)) BGRID.set(k, []); BGRID.get(k).push(b); } SIM.ready = true; afterLoad(); simCmd('speed', { tps: TPS * SPEEDS[ui.speed] });

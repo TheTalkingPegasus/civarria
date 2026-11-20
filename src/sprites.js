@@ -209,7 +209,9 @@ const ANIM_PX = {
   pig: ['..............o.', '..oooooooooo.opo', '.opppppppppppppo', 'oppPppppppppppeo', 'opppppppppppppsso', '.oppppppppppppso', '..oPPoooooPPoo..', '..opo.....opo...'],
   donkey: ['.............o.o..', '............ogogo.', '............oggo..', '..ooooooooooogggo.', '.ogggggggggkkggego', 'ogGggggggggggggggo', 'ogglllllllllgo.olo', '.oggggggggggo..oo.', '..oGo.....oGo.....', '..oGo.....oGo.....', '..oko.....oko.....'],
 };
+ANIM_PX.horse = ['...............oo.', '..............okgo', '.............okggo', '..ooooooooooookgego', '.okggggggggggggggo', 'okgGggggggggggggo.', 'oggggggggggggggo..', '.ogggggggggggo....', '..oGo..oGo.oGo.oGo', '..oGo..oGo.oGo.oGo', '..oko..oko.oko.oko'];
 const ANIM_PAL = {
+  horse: [{ o: '#2a1e1a', g: '#8a5a34', G: '#6a4424', k: '#2a1e16', e: '#000' }, { o: '#2a1e1a', g: '#a07a50', G: '#806040', k: '#4a3a2a', e: '#000' }],
   sheep: [{ o: '#2a1e1a', w: '#eeeae0', W: '#d4cfc2', k: '#3a3330', e: '#000' }, { o: '#2a1e1a', w: '#8a5a34', W: '#6a4224', k: '#3a2a20', e: '#000' }],
   cattle: [{ o: '#2a1e1a', c: '#a0683c', C: '#7a4a28', h: '#e8dcc0', n: '#d99a8a', e: '#000', f: '#2a1e1a' }, { o: '#1a1410', c: '#3a2c24', C: '#2a201a', h: '#f0e6d0', n: '#4a3a30', e: '#000', f: '#1a1410' }],
   pig: [{ o: '#2a1e1a', p: '#e8a8a0', P: '#c88880', s: '#d07070', e: '#000' }, { o: '#1a1410', p: '#5a4636', P: '#3e3026', s: '#2a201a', e: '#000' }],
